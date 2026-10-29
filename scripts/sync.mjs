@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * 把构建产物同步到静态站（默认：mkdocs-blog 的 docs/solar/）。
+ * 把构建产物拷到某个本地静态站目录（可选能力）。
+ * 主部署路径是 Cloudflare Pages（push 即自动构建），本脚本只在需要本地拷贝时才用。
  *
  * 用法：
  *   npm run sync                              只同步（用现有 dist/）

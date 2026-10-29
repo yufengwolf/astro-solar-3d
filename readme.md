@@ -282,10 +282,10 @@ views: [
 
 ### 6.3 本地同步到另一个仓库（可选，非必须）
 
-如果你仍想把产物拷进某个静态站目录，编辑 `sync.config.json` 的 `dest`：
+如果你仍想把产物拷进某个本地静态站目录，编辑 `sync.config.json` 的 `dest`（默认 `./_export`）：
 
 ```json
-{ "dest": "C:/Users/99432/code/WorkBuddy_workspace/mkdocs-blog/docs/solar" }
+{ "dest": "./_export" }
 ```
 
 ```bash

@@ -1,4 +1,4 @@
 {
-  "dest": "C:/Users/99432/code/WorkBuddy_workspace/mkdocs-blog/docs/solar",
-  "_comment": "npm run sync 的默认同步目标（MkDocs 静态站）。可改为任意目录，也可用 `npm run sync -- <目录>` 临时覆盖；相对路径按本仓库根目录解析。"
+  "dest": "./_export",
+  "_comment": "可选的本地导出目录（npm run sync 用）。主部署路径是 Cloudflare Pages（见 README 第 6.1 节），这个配置只在你想把 dist 拷到某个本地静态站目录时才需要改。相对路径按本仓库根目录解析；也可用 `npm run sync -- <目录>` 临时覆盖。"
 }
