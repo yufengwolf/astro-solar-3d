@@ -1,0 +1,36 @@
+来源与署名
+==========
+
+本仓库是基于上游项目 Solar-System-3D 的衍生作品，依据 MIT 许可复制、修改并重新发布。
+
+上游项目
+--------
+- 名称：Solar-System-3D
+- 作者：Karol Fryc (N3rson)
+- 地址：https://github.com/N3rson/Solar-System-3D
+- 许可：MIT（见 LICENSE，原始版权声明 "Copyright (c) 2025 N3rson" 完整保留）
+
+本仓库相对上游的改动
+--------------------
+- 原单体脚本 src/script.js 重构为「数据 + 配置 + 通用编排器」架构
+- 新增真实物理参数表 src/data/bodies-real.js（半径 / 自转 / 轴倾角 / 半长轴 /
+  偏心率 / 倾角 / 升交点经度 / 周期）
+- 轨道由正圆改为真实椭圆（中心天体落在焦点），运动解开普勒方程
+- 由「单一太阳系」扩展为 8 个可独立构建的页面（太阳系总览 + 7 个行星子系统）
+- 新增多视角取景、尺度自检脚本等工程化能力
+
+素材许可（重要：不适用 MIT）
+----------------------------
+代码部分是 MIT，但下列**贴图 / 3D 模型素材来自第三方，各有其独立许可**，
+不在 MIT 授权范围内，使用时须遵守各自条款并保留署名：
+
+- NASA 3D Resources        https://nasa3d.arc.nasa.gov/images
+                           （美国政府作品，公共领域）
+- Solar System Scope       https://www.solarsystemscope.com/textures/
+                           （CC BY 4.0，要求署名）
+- Planet Pixel Emporium    https://planetpixelemporium.com/index.php
+                           （要求署名； historically 限非商业用途，商业用途请先确认）
+- TurboSquid               https://www.turbosquid.com/
+                           （按具体条目许可）
+
+其中 src/images/ 下的行星 / 卫星贴图与 static/ 下的 .glb 模型均来自上述来源。

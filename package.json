@@ -1,0 +1,38 @@
+{
+  "name": "astro-solar-3d",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "太阳系总览与 7 个行星子系统的 Three.js 可视化，轨道参数取自 JPL/PDS 真实值，可独立部署为静态站点",
+  "license": "MIT",
+  "author": "yufengwolf",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yufengwolf/astro-solar-3d.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:solar": "vite build --config vite.solar.config.js",
+    "build:earth-moon": "vite build --config vite.earth-moon.config.js",
+    "build:mars": "vite build --config vite.mars.config.js",
+    "build:jupiter": "vite build --config vite.jupiter.config.js",
+    "build:saturn": "vite build --config vite.saturn.config.js",
+    "build:uranus": "vite build --config vite.uranus.config.js",
+    "build:neptune": "vite build --config vite.neptune.config.js",
+    "build:pluto": "vite build --config vite.pluto.config.js",
+    "check": "node scripts/check-scale.mjs",
+    "sync": "node scripts/sync.mjs"
+  },
+  "devDependencies": {
+    "vite": "^4.5.0"
+  },
+  "dependencies": {
+    "dat.gui": "^0.7.9",
+    "postprocessing": "^7.0.0-alpha-1",
+    "three": "^0.160.0"
+  }
+}

@@ -1,0 +1,24 @@
+# 依赖
+node_modules/
+
+# 构建产物（部署时由 Cloudflare Pages 现场构建；本地 dist 不进仓库）
+dist/
+
+# 自检脚本的中间产物
+src/.check-tmp/
+
+# 截图 / 无头浏览器临时目录
+.shots/
+.chrome-tmp*/
+.edge-tmp*/
+.smoke*/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地日志
+*.log

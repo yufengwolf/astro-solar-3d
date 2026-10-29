@@ -1,0 +1,7 @@
+# 统一换行：仓库内存 LF，工作区按系统转换（Windows 下为 CRLF）
+* text=auto eol=lf
+
+# 二进制素材不做任何转换
+*.jpg binary
+*.png binary
+*.glb binary
