@@ -37,9 +37,10 @@ function makeComet(def) {
 
 // 哈雷：渲染 e 已被近日点下限收到 0.9064，真实 e 0.9671 保存在 eReal
 const halley = makeComet({
-  id: 'halley', name: '哈雷', size: 2.5,
+  // size 用生产值：真实半径 5.5 km 按 radiusPower 0.35 压缩后 = 0.542 单位（远低于下限 2.5）
+  id: 'halley', name: '哈雷', size: 0.542,
   orbit: { a: 363.4, e: 0.9064, eReal: 0.9671, aAU: 17.83414, inc: 162.2627 },
-  comet: { onsetAU: 6, ionTailUnits: 150, comaScale: 7 },
+  comet: { onsetAU: 6, ionTailUnits: 150, comaRadiusUnits: 4.6 },
 });
 
 function axisOf(obj) {
@@ -108,6 +109,17 @@ updateComet(halley, sunPos, 1);
 const lenPeri = halley.comet.ion.userData.length;
 check(lenPeri > lenApo * 10, `近日点尾巴(${lenPeri.toFixed(1)}) 远长于远日点(${lenApo.toFixed(1)})，符合 1/r² 衰减`);
 check(Math.abs(lenPeri - 150) < 0.5, `近日点离子尾长为配置值 150（实际 ${lenPeri.toFixed(1)}）`);
+
+// 彗发必须是"扫把头"，不能是"大亮球"。
+// 早期版本 comaRadiusUnits=20、外层氢冕 36 —— 比太阳(26)还大，整颗彗星看着就是一颗
+// 比太阳更大的发光球，尾巴反而成了附属品。这里把量级锁死：彗发 << 太阳。
+const SUN_UNITS = 26;
+const comaPeri = halley.comet.coma.scale.x;
+const comaOuter = halley.comet.coma2.scale.x;
+check(comaOuter < SUN_UNITS * 0.5,
+  `彗发外层半径 ${comaOuter.toFixed(2)} 远小于太阳半径 ${SUN_UNITS}（应 < ${(SUN_UNITS * 0.5).toFixed(0)}）`);
+check(comaPeri > halley.def.size * 2,
+  `彗发仍明显大于彗核（${comaPeri.toFixed(2)} vs 核 ${halley.def.size}），核不会露在雾外面`);
 
 // 尾巴应指向背离太阳：把太阳挪到别处，方向必须跟着变
 const moved = new THREE.Vector3(500, 0, 0);

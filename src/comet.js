@@ -32,10 +32,17 @@ export const COMET_DEFAULTS = {
 
   // 彗发用**绝对场景单位**，不是"核半径的倍数"。
   // 原因：彗核真实半径只有几 km，压缩后不足 1 单位（几乎不可见——这正是真实的），
-  // 若彗发按核半径取倍数，会跟着一起缩水到看不见。而真实彗星肉眼所见本来就是彗发，
-  // 其尺度可达 10^5 km 量级（本场景 1 单位 ≈ 995 km，故取 24 单位 ≈ 2.4×10^4 km，仍偏保守）。
-  comaRadiusUnits: 20, // 满活动时彗发半径（场景单位）
-  comaOpacity: 0.20, // 加法混合很容易过曝，压低一些才像"雾"而不像"实心亮球"
+  // 若彗发按核半径取倍数，会跟着一起缩水到看不见。
+  //
+  // 取多大的量级？参照同场景其它天体（半径）：太阳 26、木星 14.8、地球 6.4、彗核 0.5。
+  // 彗发必须**明显小于太阳**，否则整颗彗星看起来就是一颗"比太阳还大的亮球"——
+  // 那既不符合观感，也抢走了尾巴的视觉主体地位。这里取 3.6（约地球的一半），
+  // 加上极淡的外层氢冕（1.7×）后，肉眼所见正是"扫把头"：一个小小的亮核 + 长长的尾巴。
+  comaRadiusUnits: 3.6, // 满活动时彗发半径（场景单位）
+  comaOuterRatio: 1.7, // 外层氢冕 / 内层彗发
+  comaOuterOpacity: 0.22, // 外层亮度系数（相对内层），只留一圈若有若无的雾
+  comaNucleusRatio: 3.2, // 彗发至少是核半径的几倍：拖「视觉放大」滑块把核放大后，彗发跟着长，避免核露在雾外面
+  comaOpacity: 0.32, // 加法混合很容易过曝；球变小了才敢提亮一点，仍是"雾"不是"实心亮球"
   comaColor: 0xbfe6ff,
   comaFalloff: 2.4, // 辉光边缘衰减指数，越大中心越集中
   ionTailUnits: 100, // 离子尾满活动时的长度（场景单位）
@@ -287,10 +294,11 @@ export function createCometParts(def, mesh) {
 
   // 两层：内层亮而小（彗发核心），外层淡而大（外层氢冕）
   const coma = comaMesh(cfg.comaColor, cfg.comaOpacity, cfg.comaFalloff, cfg.comaRadiusUnits);
-  // 外层氢冕：真实可达 10^6 km，但这里只画到 1.8×——再大既占填充率（加法混合很吃 GPU），
+  // 外层氢冕：真实可达 10^6 km，但这里只画到 1.7×——再大既占填充率（加法混合很吃 GPU），
   // 又会让彗星看起来像一个"大亮球"而不是带雾核的小天体。
-  const coma2 = comaMesh(cfg.comaColor, cfg.comaOpacity * 0.26, cfg.comaFalloff * 0.5,
-    cfg.comaRadiusUnits * 1.8);
+  const outer = cfg.comaOuterRatio ?? 1.7;
+  const coma2 = comaMesh(cfg.comaColor, cfg.comaOpacity * (cfg.comaOuterOpacity ?? 0.22),
+    cfg.comaFalloff * 0.5, cfg.comaRadiusUnits * outer);
   coma.userData.bodyId = def.id;
   coma2.userData.bodyId = def.id;
   coma2.raycast = () => {}; // 只让内层参与点击，外层太大容易误触
@@ -405,8 +413,12 @@ export function updateComet(node, sunPos, tailGain = 1) {
   // ---- 彗发：绝对场景单位 + 位置跟随彗核；远日点几乎消失，近日点膨胀 ----
   const comaOp = Math.min(0.55, cfg.comaOpacity * (0.25 + 0.75 * act) * tailGain);
   c.coma.material.uniforms.uOpacity.value = comaOp;
-  c.coma2.material.uniforms.uOpacity.value = comaOp * 0.26;
-  const comaR = cfg.comaRadiusUnits * (0.25 + 0.75 * act);
+  c.coma2.material.uniforms.uOpacity.value = comaOp * (cfg.comaOuterOpacity ?? 0.22);
+  // 大小只随活动强度变（远日点萎缩成一点），**不随彗尾强度滑块变**——
+  // 那个滑块只管长尾巴，不该把头也吹大。
+  const nucR = d.size ?? 0.5; // 彗核半径（会随「视觉放大」滑块变化）
+  const comaR = Math.max(cfg.comaRadiusUnits * (0.30 + 0.70 * act), nucR * (cfg.comaNucleusRatio ?? 3.2));
+  const outer = cfg.comaOuterRatio ?? 1.7;
   // 远日点彗发几乎消失（真实：那时它就是一颗又黑又小的核）
   const showComa = comaOp > 0.004;
   c.coma.visible = showComa;
@@ -414,7 +426,7 @@ export function updateComet(node, sunPos, tailGain = 1) {
   c.coma.position.copy(_pos);
   c.coma.scale.setScalar(comaR);
   c.coma2.position.copy(_pos);
-  c.coma2.scale.setScalar(comaR * 1.8);
+  c.coma2.scale.setScalar(comaR * outer);
 
   // ---- 轨道运动方向：对位置做一次微小前插，得到速度方向（尘埃尾要向后偏）----
   const a = d.orbit.a;

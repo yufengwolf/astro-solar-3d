@@ -282,9 +282,15 @@ export function start(system) {
   updateBadge(settings.bodyExaggeration);
   if (views.length > 1) {
     const labels = views.map((v) => v.label);
-    // 默认选中与 camera.frameTo 对应的那一档（views[0] 不一定就是默认视角）
-    const defId = views.findIndex((v) => v.frameTo === (system.camera?.frameTo ?? 'auto'));
+    // 默认选中与 camera.frameTo 对应的那一档（views[0] 不一定就是默认视角）；
+    // 支持 ?view=<id> 直接指定初始档位（截图 / 嵌入 iframe 时想停在某个范围）
+    const want = new URLSearchParams(location.search).get('view');
+    const byUrl = want ? views.findIndex((v) => v.id === want) : -1;
+    const defId = byUrl >= 0 ? byUrl
+      : views.findIndex((v) => v.frameTo === (system.camera?.frameTo ?? 'auto'));
     settings.view = labels[Math.max(0, defId)];
+    // applyView 依赖后面才声明的 flyPos/flyTarget，放到下一轮再飞，避免 TDZ
+    if (byUrl >= 0) setTimeout(() => applyView(byUrl), 0);
     gui.add(settings, 'view', labels).name('取景范围').onChange((label) => {
       const i = labels.indexOf(label);
       if (i >= 0) applyView(i);
@@ -380,8 +386,10 @@ export function start(system) {
     controls.target.copy(worldPos);
     camera.lookAt(worldPos);
 
-    // 小卫星按自身半径取景，否则飞过去了还是看不见
-    const offset = def.cameraOffset ?? Math.max(def.size * 8, 2);
+    // 小卫星按自身半径取景，否则飞过去了还是看不见；
+    // 彗星则要按"尾长"取景——按核半径飞过去会一头扎进彗发里（加法混合的雾会糊满屏幕）
+    const tailUnits = def.comet ? (def.comet.ionTailUnits ?? 100) : 0;
+    const offset = def.cameraOffset ?? Math.max(def.size * 8, tailUnits * 0.35, 2);
     targetCameraPosition
       .copy(worldPos)
       .add(camera.position.clone().sub(worldPos).normalize().multiplyScalar(offset));
