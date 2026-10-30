@@ -27,11 +27,17 @@ import { orbitPoint } from './bodies.js';
  * 但"何时亮、何时暗"用的是真实日心距（r = a(1 - e·cos E)），这部分是真实的。
  */
 
-const DEFAULTS = {
-  comaScale: 6, // 彗发半径 = 核半径 × 该值（满活动时）
-  comaOpacity: 0.34,
+/** 彗星视觉参数的默认值（自检脚本要读它来推算"彗星的可见范围"） */
+export const COMET_DEFAULTS = {
+
+  // 彗发用**绝对场景单位**，不是"核半径的倍数"。
+  // 原因：彗核真实半径只有几 km，压缩后不足 1 单位（几乎不可见——这正是真实的），
+  // 若彗发按核半径取倍数，会跟着一起缩水到看不见。而真实彗星肉眼所见本来就是彗发，
+  // 其尺度可达 10^5 km 量级（本场景 1 单位 ≈ 995 km，故取 24 单位 ≈ 2.4×10^4 km，仍偏保守）。
+  comaRadiusUnits: 20, // 满活动时彗发半径（场景单位）
+  comaOpacity: 0.20, // 加法混合很容易过曝，压低一些才像"雾"而不像"实心亮球"
   comaColor: 0xbfe6ff,
-  comaFalloff: 2.0, // 辉光边缘衰减指数，越大中心越集中
+  comaFalloff: 2.4, // 辉光边缘衰减指数，越大中心越集中
   ionTailUnits: 100, // 离子尾满活动时的长度（场景单位）
   dustTailRatio: 0.62, // 尘埃尾长度 = 离子尾 × 该比例
   ionWidthRatio: 0.13, // 尾的横向张开半径 / 长度
@@ -265,25 +271,31 @@ function comaMesh(color, opacity, falloff, scale) {
 }
 
 /**
- * 给彗星本体挂上彗发，并造出两条粒子尾（尾巴挂 scene 根，由调用方加入场景）。
+ * 造出彗发与两条粒子尾。三者的共同点：**都挂在 scene 根**，不挂在核下面。
+ *   - 尾巴要在世界坐标里背离太阳，挂在随轨道面倾斜/旋转的 plane 下无法定向；
+ *   - 彗发要用绝对场景单位，挂在核下会继承核的 scale（彗核被压到几乎不可见，
+ *     且会随「视觉放大」滑块变化），彗发会跟着一起缩水。
+ * 因此彗发与尾巴都由调用方 add 到 scene，位置每帧跟随彗核。
+ *
  * @param {object} def 天体定义（需含 def.comet 配置）
  * @param {THREE.Mesh} mesh 本体（核）
  * @returns {{cfg:object, coma:THREE.Mesh, coma2:THREE.Mesh, ion:THREE.Points, dust:THREE.Points}}
  */
 export function createCometParts(def, mesh) {
-  const cfg = { ...DEFAULTS, ...(def.comet ?? {}) };
+  const cfg = { ...COMET_DEFAULTS, ...(def.comet ?? {}) };
   const seed = (def.id ?? 'comet').split('').reduce((s, ch) => s + ch.charCodeAt(0), 0);
 
-  // 彗发挂在核下面，会继承核的 scale(=def.size)，
-  // 因此这里的 scale 是"相对核半径的倍数"，随视觉放大滑块自动同步增长。
   // 两层：内层亮而小（彗发核心），外层淡而大（外层氢冕）
-  const coma = comaMesh(cfg.comaColor, cfg.comaOpacity, cfg.comaFalloff, cfg.comaScale);
-  const coma2 = comaMesh(cfg.comaColor, cfg.comaOpacity * 0.35, cfg.comaFalloff * 0.6, cfg.comaScale * 2.1);
+  const coma = comaMesh(cfg.comaColor, cfg.comaOpacity, cfg.comaFalloff, cfg.comaRadiusUnits);
+  // 外层氢冕：真实可达 10^6 km，但这里只画到 1.8×——再大既占填充率（加法混合很吃 GPU），
+  // 又会让彗星看起来像一个"大亮球"而不是带雾核的小天体。
+  const coma2 = comaMesh(cfg.comaColor, cfg.comaOpacity * 0.26, cfg.comaFalloff * 0.5,
+    cfg.comaRadiusUnits * 1.8);
   coma.userData.bodyId = def.id;
   coma2.userData.bodyId = def.id;
-  coma2.raycast = () => {};
-  mesh.add(coma);
-  mesh.add(coma2);
+  coma2.raycast = () => {}; // 只让内层参与点击，外层太大容易误触
+  coma.visible = false;
+  coma2.visible = false;
 
   const ion = tailPoints(cfg.ionParticles, seed + 1, {
     width: cfg.ionWidthRatio,
@@ -384,19 +396,25 @@ export function updateComet(node, sunPos, tailGain = 1) {
   const onset = cfg.onsetAU ?? 3;
   const act = Math.min(1, (onset * onset) / (rAU * rAU)); // 1/r² 衰减
 
-  // ---- 彗发：远日点几乎消失，近日点膨胀 ----
-  const comaScale = cfg.comaScale * (0.28 + 0.72 * act);
-  c.coma.scale.setScalar(comaScale);
-  c.coma2.scale.setScalar(comaScale * 2.1);
-  const comaOp = Math.min(0.7, cfg.comaOpacity * (0.25 + 0.75 * act) * tailGain);
-  c.coma.material.uniforms.uOpacity.value = comaOp;
-  c.coma2.material.uniforms.uOpacity.value = comaOp * 0.35;
-
   // ---- 位置与背离太阳方向 ----
   node.mesh.getWorldPosition(_pos);
   _dir.copy(_pos).sub(sunPos);
   if (_dir.lengthSq() < 1e-8) _dir.set(0, 0, 1);
   _dir.normalize();
+
+  // ---- 彗发：绝对场景单位 + 位置跟随彗核；远日点几乎消失，近日点膨胀 ----
+  const comaOp = Math.min(0.55, cfg.comaOpacity * (0.25 + 0.75 * act) * tailGain);
+  c.coma.material.uniforms.uOpacity.value = comaOp;
+  c.coma2.material.uniforms.uOpacity.value = comaOp * 0.26;
+  const comaR = cfg.comaRadiusUnits * (0.25 + 0.75 * act);
+  // 远日点彗发几乎消失（真实：那时它就是一颗又黑又小的核）
+  const showComa = comaOp > 0.004;
+  c.coma.visible = showComa;
+  c.coma2.visible = showComa;
+  c.coma.position.copy(_pos);
+  c.coma.scale.setScalar(comaR);
+  c.coma2.position.copy(_pos);
+  c.coma2.scale.setScalar(comaR * 1.8);
 
   // ---- 轨道运动方向：对位置做一次微小前插，得到速度方向（尘埃尾要向后偏）----
   const a = d.orbit.a;

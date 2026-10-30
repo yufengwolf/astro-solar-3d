@@ -197,6 +197,9 @@ export function start(system) {
     // 尾巴要在**世界坐标**里始终背离太阳，挂在随轨道面倾斜/旋转的 plane 下无法定向。
     if (def.comet && node.mesh) {
       node.comet = createCometParts(def, node.mesh);
+      // 彗发与尾巴都挂 scene 根：前者要用绝对场景单位，后者要在世界坐标里背离太阳
+      scene.add(node.comet.coma);
+      scene.add(node.comet.coma2);
       scene.add(node.comet.ion);
       scene.add(node.comet.dust);
     }

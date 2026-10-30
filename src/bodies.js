@@ -69,6 +69,11 @@ export function createBody(def) {
         opts.bumpScale = def.bumpScale ?? 0.7;
       }
       material = new THREE.MeshPhongMaterial(opts);
+    } else if (def.comet) {
+      // 彗核：真实反照率仅约 0.04（比煤还黑），而且是"脏雪球"——没有大气、
+      // 没有镜面高光。我们平时看到的"亮"其实全部来自彗发与彗尾，核本体几乎不可见。
+      // 所以用不受光的 MeshBasicMaterial + 极暗色，让它老老实实当个暗点。
+      material = new THREE.MeshBasicMaterial({ color: def.color ?? 0x15130f });
     } else {
       // 无贴图素材时的占位球：用真实反照率调制的灰阶
       material = new THREE.MeshPhongMaterial({

@@ -28,6 +28,8 @@ function makeComet(def) {
   const scene = new THREE.Scene();
   scene.add(group);
   const parts = createCometParts(def, mesh);
+  scene.add(parts.coma);
+  scene.add(parts.coma2);
   scene.add(parts.ion);
   scene.add(parts.dust);
   return { def, mesh, plane, comet: parts, _E: 0 };
@@ -71,7 +73,7 @@ function report(node, label, E) {
     `尘埃尾长=${node.comet.dust.visible ? node.comet.dust.userData.length.toFixed(1) : '隐藏'}  ` +
     `离子尾偏离背日方向=${angIon.toFixed(2)}°  尘埃尾根偏转=${angDust.toFixed(1)}°  ` +
     `末端再弯=${(Math.atan(curveMag) / DEG).toFixed(1)}°  ` +
-    `彗发半径=${(node.def.size * node.comet.coma.scale.x).toFixed(1)}`
+    `彗发半径=${node.comet.coma.scale.x.toFixed(1)}  彗核=${node.def.size.toFixed(2)}`
   );
   return { angIon, angDust, curveMag };
 }
@@ -115,6 +117,55 @@ halley.mesh.getWorldPosition(away2);
 away2.sub(moved).normalize();
 const ang2 = axisOf(halley.comet.ion).angleTo(away2) / DEG;
 check(ang2 < 0.01, `太阳移位后尾巴仍严格背离太阳（偏差 ${ang2.toFixed(3)}°）`);
+
+// ---------------------------------------------------------------------------
+// 尾巴到底该指向哪？——常见直觉是"拖在运动后方"，但真实彗尾是**背离太阳**：
+//   · 远离太阳时：运动朝外、尾巴也朝外 → 尾巴确实拖在"后侧方"（夹角 < 90°）
+//   · 接近太阳时：运动朝内、尾巴朝外 → 尾巴指向"前侧方"（夹角 > 90°）
+//   · 近日点 / 远日点：速度与半径垂直 → 正侧面（夹角 = 90°）
+// 这里用生产代码实测哈雷一个周期内的夹角，确认实现符合这条规律。
+// ---------------------------------------------------------------------------
+function velocityDir(node, E) {
+  const { a, e } = node.def.orbit;
+  const p1 = orbitPoint(a, e, E);
+  const p2 = orbitPoint(a, e, E + 0.002);
+  const v1 = new THREE.Vector3(p1.x, 0, p1.z);
+  const v2 = new THREE.Vector3(p2.x, 0, p2.z);
+  node.plane.updateWorldMatrix(true, false);
+  node.plane.localToWorld(v1);
+  node.plane.localToWorld(v2);
+  return v2.sub(v1).normalize();
+}
+
+console.log('\n=== 哈雷：彗尾方向 vs 运动方向（尾巴背离太阳，不是拖在后面）===');
+const angles = [];
+for (const E of [0, 0.6, 1.2, 1.8, 2.4, 3.14, 3.8, 4.4, 5.0, 5.6]) {
+  halley._E = E;
+  const { a, e } = halley.def.orbit;
+  const b = a * Math.sqrt(1 - e * e);
+  halley.mesh.position.set(a * (Math.cos(E) - e), 0, b * Math.sin(E));
+  halley.mesh.updateMatrixWorld(true);
+  updateComet(halley, sunPos, 1);
+
+  const pos = new THREE.Vector3();
+  halley.mesh.getWorldPosition(pos);
+  const radial = pos.clone().normalize(); // 背离太阳方向
+  const vel = velocityDir(halley, E);
+  const ang = axisOf(halley.comet.ion).angleTo(vel) / DEG;
+  const outward = vel.dot(radial); // >0 表示正在远离太阳
+  const rAU = halley.def.orbit.aAU * (1 - (halley.def.orbit.eReal ?? e) * Math.cos(E));
+  angles.push({ E, ang, outward });
+  console.log(
+    `  E=${E.toFixed(2)}  r=${rAU.toFixed(2).padStart(6)} AU  ` +
+    `${outward > 0 ? '远离太阳' : '接近太阳'}  尾-运动夹角=${ang.toFixed(1).padStart(5)}°  ` +
+    `→ 尾巴在${ang > 100 ? '前侧方（迎着运动）' : ang < 80 ? '后方（拖在后面）' : '正侧面'}`
+  );
+}
+const away = angles.filter((x) => x.outward > 0);
+const toward = angles.filter((x) => x.outward < 0);
+check(Math.abs(angles[0].ang - 90) < 8, `近日点尾巴与运动方向垂直（${angles[0].ang.toFixed(1)}°，即正侧面）`);
+check(away.some((x) => x.ang < 70), `远离太阳时尾巴拖在后方（最小夹角 ${Math.min(...away.map((x) => x.ang)).toFixed(1)}°）`);
+check(toward.some((x) => x.ang > 110), `接近太阳时尾巴指向前侧方（最大夹角 ${Math.max(...toward.map((x) => x.ang)).toFixed(1)}°）`);
 
 // ---------------------------------------------------------------------------
 // 初始画面：用真实配置 solar.js 复算每颗彗星的尾长。

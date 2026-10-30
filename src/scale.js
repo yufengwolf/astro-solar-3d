@@ -10,6 +10,7 @@ import { AU_KM } from './data/bodies-real.js';
  *                         按真实比例渲染就是不足 1 像素的点（"看不见天体"的根因）。
  * scale.bodyExaggeration —— 半径统一放大倍数（默认 1）
  * scale.minBodyUnits    —— 半径下限（场景单位），兜住极端小的天体
+ * def.minSizeUnits      —— 单个天体覆盖该下限（彗核用：它本就该小到几乎看不见）
  * scale.distanceMode   —— 'linear' 真实比例（可乘 distanceFactor）
  *                         'power'  按 a^p 幂律压缩（仅太阳系总览用）
  * scale.distanceFactor —— linear 模式下的距离倍数，1 = 完全真实比例。
@@ -40,9 +41,11 @@ function makeSizer(system) {
   return {
     refDef,
     sizeOf(def, factor = 1) {
+      // def.minSizeUnits 可单独覆盖系统下限：彗核真实半径只有几 km，
+      // 若被系统的 minBodyUnits 兜底，会大到和谷神星同量级——而彗核本就该几乎看不见。
       return Math.max(
         refUnits * Math.pow(def.realRadiusKm / refDef.realRadiusKm, radiusPower) * factor,
-        minUnits
+        def.minSizeUnits ?? minUnits
       );
     },
   };

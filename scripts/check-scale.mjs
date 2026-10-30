@@ -13,6 +13,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { REAL } from '../src/data/bodies-real.js';
 import { applyScale, frameRadius } from '../src/scale.js';
+import { COMET_DEFAULTS } from '../src/comet.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(here, '..', 'src');
@@ -49,8 +50,14 @@ let problems = 0;
 const warn = (m) => { problems++; console.log('   [!] ' + m); };
 const info = (m) => console.log('   · ' + m);
 
-const extentOf = (b) =>
-  b.ring ? (b.ring.outerRadius ?? b.size * (b.ring.outerScale ?? 1.5)) : (b.model?.radiusUnits ?? b.size);
+const extentOf = (b) => {
+  if (b.ring) return b.ring.outerRadius ?? b.size * (b.ring.outerScale ?? 1.5);
+  if (b.model) return b.model.radiusUnits ?? b.size;
+  // 彗星：核只有几 km、压缩后不足 1 单位（本来就该看不见），
+  // 肉眼所见的"彗星"其实是彗发，所以可见范围要按彗发半径算，否则会误报"看不见"。
+  if (b.comet) return b.comet.comaRadiusUnits ?? COMET_DEFAULTS.comaRadiusUnits;
+  return b.size;
+};
 
 for (const f of readdirSync(TMP).sort()) {
   if (f === 'mk.js') continue;

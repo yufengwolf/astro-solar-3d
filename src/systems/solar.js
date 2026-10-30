@@ -230,7 +230,12 @@ export default {
     // 彗核半径只有几公里，这里按下限(2.5)渲染；真正的看点是彗发与彗尾——
     // 它们只在接近太阳时才出现，把「时间流速」拉到 200 天/秒最容易看到彗尾长出来。
     mk('halley', '哈雷彗星 1P', {
-      color: 0x4f4c45, // 彗核反照率仅约 0.04，比煤灰还黑
+      // 彗核：反照率仅约 0.04（比煤还黑），所以颜色极暗、且不受光照（见 bodies.js）。
+      // minSizeUnits：不用系统的 minBodyUnits(2.5) 兜底——那会让几 km 的彗核
+      // 涨到和谷神星同量级。真实压缩值只有 0.37–0.54 单位，就该小到几乎看不见，
+      // 我们看到的"亮"全部来自彗发与彗尾。
+      color: 0x1a1712,
+      minSizeUnits: 0.35,
       // node = 升交点经度。本模型未建模「近日点幅角」，若不指定 node，
       // 所有彗星的近日点会落在同一方向，活跃彗尾便统统指向同一侧——默认相机在 -X 侧，
       // 尾巴正对镜头会被压缩成一个点。真实彗星各有不同升交点，这里取不同值把近日点错开。
@@ -249,7 +254,8 @@ export default {
       },
     }),
     mk('encke', '恩克彗星 2P', {
-      color: 0x4f4c45,
+      color: 0x1a1712,
+      minSizeUnits: 0.35,
       orbit: { opacity: 0.16, color: 0x9fe0ff, node: 130, M0: 3.9007 },
       comet: { onsetAU: 3, ionTailUnits: 60 },
       info: {
@@ -260,7 +266,8 @@ export default {
       },
     }),
     mk('tempel1', '坦普尔 1 号彗星 9P', {
-      color: 0x4f4c45,
+      color: 0x1a1712,
+      minSizeUnits: 0.35,
       orbit: { opacity: 0.16, color: 0xa8dcff, node: 220, M0: 3.4178 },
       comet: { onsetAU: 3.2, ionTailUnits: 70 },
       info: {
@@ -270,7 +277,8 @@ export default {
       },
     }),
     mk('churyumov', '67P 丘留莫夫-格拉西缅科', {
-      color: 0x4f4c45,
+      color: 0x1a1712,
+      minSizeUnits: 0.35,
       orbit: { opacity: 0.16, color: 0xa8dcff, node: 40, M0: 2.6011 },
       comet: { onsetAU: 3, ionTailUnits: 80 },
       info: {
@@ -280,7 +288,8 @@ export default {
       },
     }),
     mk('tempelTuttle', '坦普尔-塔特尔彗星 55P', {
-      color: 0x4f4c45,
+      color: 0x1a1712,
+      minSizeUnits: 0.35,
       orbit: { opacity: 0.16, color: 0xb0c8ff, node: 270, M0: 3.9970 },
       comet: { onsetAU: 4, ionTailUnits: 130 },
       info: {
