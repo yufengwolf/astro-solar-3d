@@ -234,7 +234,11 @@ export default {
       // node = 升交点经度。本模型未建模「近日点幅角」，若不指定 node，
       // 所有彗星的近日点会落在同一方向，活跃彗尾便统统指向同一侧——默认相机在 -X 侧，
       // 尾巴正对镜头会被压缩成一个点。真实彗星各有不同升交点，这里取不同值把近日点错开。
-      orbit: { opacity: 0.18, color: 0x8fd8ff, node: 90 },
+      // M0：初始平近点角，决定"画面一开始各彗星在轨道的哪个位置"。
+      // 全部取**真实值**——由 JPL SBDB 的历元平近点角按各自周期统一推进到
+      // 1986-02-09（哈雷那次回归的过近日点时刻）得到。这样初始画面里哈雷正值
+      // 最活跃（尾长满值 150），其余几颗散在轨道各处、长短不一，既有看点又不糊成一团。
+      orbit: { opacity: 0.18, color: 0x8fd8ff, node: 90, M0: 6.2781 },
       comet: { onsetAU: 6, ionTailUnits: 150, comaScale: 7 },
       info: {
         核半径: '约 5.5 km（11×8 km）', 轨道半长轴: '17.83 AU', 偏心率: '0.967（本页最扁）',
@@ -246,7 +250,7 @@ export default {
     }),
     mk('encke', '恩克彗星 2P', {
       color: 0x4f4c45,
-      orbit: { opacity: 0.16, color: 0x9fe0ff, node: 130 },
+      orbit: { opacity: 0.16, color: 0x9fe0ff, node: 130, M0: 3.9007 },
       comet: { onsetAU: 3, ionTailUnits: 60 },
       info: {
         核半径: '约 2.4 km', 轨道半长轴: '2.21 AU', 偏心率: '0.848',
@@ -257,7 +261,7 @@ export default {
     }),
     mk('tempel1', '坦普尔 1 号彗星 9P', {
       color: 0x4f4c45,
-      orbit: { opacity: 0.16, color: 0xa8dcff, node: 220 },
+      orbit: { opacity: 0.16, color: 0xa8dcff, node: 220, M0: 3.4178 },
       comet: { onsetAU: 3.2, ionTailUnits: 70 },
       info: {
         核半径: '约 2.9 km（7.6×4.9 km）', 轨道半长轴: '3.14 AU', 偏心率: '0.512',
@@ -267,7 +271,7 @@ export default {
     }),
     mk('churyumov', '67P 丘留莫夫-格拉西缅科', {
       color: 0x4f4c45,
-      orbit: { opacity: 0.16, color: 0xa8dcff, node: 40 },
+      orbit: { opacity: 0.16, color: 0xa8dcff, node: 40, M0: 2.6011 },
       comet: { onsetAU: 3, ionTailUnits: 80 },
       info: {
         核半径: '约 2.1 km（4.3×4.1 km，双瓣状）', 轨道半长轴: '3.46 AU', 偏心率: '0.641',
@@ -277,7 +281,7 @@ export default {
     }),
     mk('tempelTuttle', '坦普尔-塔特尔彗星 55P', {
       color: 0x4f4c45,
-      orbit: { opacity: 0.16, color: 0xb0c8ff, node: 270 },
+      orbit: { opacity: 0.16, color: 0xb0c8ff, node: 270, M0: 3.9970 },
       comet: { onsetAU: 4, ionTailUnits: 130 },
       info: {
         核半径: '约 1.8 km', 轨道半长轴: '10.34 AU', 偏心率: '0.906',

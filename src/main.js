@@ -8,7 +8,7 @@ import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createBody, solveKepler, orbitPoint, setCurrentExaggeration } from './bodies.js';
 import { applyScale, frameRadius, setBodyExaggeration } from './scale.js';
-import { createCometParts, updateComet } from './comet.js';
+import { createCometParts, updateComet, updateCometViewport, cometGlobals } from './comet.js';
 
 const DEG = Math.PI / 180;
 
@@ -113,6 +113,8 @@ export function start(system) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
   document.body.appendChild(renderer.domElement);
+  // 彗尾是点云，点大小要按画布高度与 fov 换算成像素；窗口变化时必须重算
+  updateCometViewport(camera, window.innerHeight);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -440,6 +442,7 @@ export function start(system) {
       }
     }
     // 彗发 / 彗尾：依赖本帧刚写好的位置与偏近点角，必须排在公转更新之后
+    cometGlobals.uTime.value = performance.now() / 1000; // 驱动彗尾湍流缓慢漂移
     for (const n of nodes) {
       if (n.comet) updateComet(n, sunPos, settings.tailGain ?? 1);
     }
@@ -488,6 +491,7 @@ export function start(system) {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     composer.setSize(window.innerWidth, window.innerHeight);
+    updateCometViewport(camera, window.innerHeight);
   });
 
   return { scene, camera, renderer, nodes, settings };
