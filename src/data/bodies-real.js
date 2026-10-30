@@ -86,6 +86,34 @@ export const REAL = {
     orbit: { aAU: 67.864, e: 0.4340, inc: 44.04, periodDays: 204200 },
   },
 
+  // ---------------- 彗星 ----------------
+  // 轨道要素取自 NASA NSSDC Comet Fact Sheet / 编号彗星表（近日点历元）。
+  // 注意两点：
+  //   1. 彗星轨道受行星摄动与非引力效应（喷流反冲）影响，要素随历元变化，这里的量级可靠但不作精确预报。
+  //   2. 逆行同样用 inc>90° 表达（哈雷 162.26°、坦普尔-塔特尔 162.49°），周期一律取正。
+  // periodDays 由半长轴经开普勒第三定律推得（P = a^1.5 年 × 365.25），与行星、矮行星口径一致。
+  // M0 = 起始时刻的平近点角（弧度），仅用于让各彗星初始相位错开，不影响轨道本身。
+  halley: {
+    radiusKm: 5.5, rotationHours: 52.8, // 核约 11×8 km；自转约 2.2 天
+    orbit: { aAU: 17.83414, e: 0.9671, inc: 162.2627, periodDays: 27511, M0: 0 },
+  },
+  encke: {
+    radiusKm: 2.4, rotationHours: 11.08,
+    orbit: { aAU: 2.21473, e: 0.8482, inc: 11.7789, periodDays: 1204, M0: 1.2 },
+  },
+  tempel1: {
+    radiusKm: 2.9, rotationHours: 40.7,
+    orbit: { aAU: 3.13933, e: 0.5119, inc: 10.502, periodDays: 2031, M0: 4.0 },
+  },
+  churyumov: { // 67P/丘留莫夫-格拉西缅科，罗塞塔号探测目标
+    radiusKm: 2.1, rotationHours: 12.4,
+    orbit: { aAU: 3.4570, e: 0.6412, inc: 7.04, periodDays: 2352, M0: 2.1 },
+  },
+  tempelTuttle: { // 狮子座流星雨母体
+    radiusKm: 1.8,
+    orbit: { aAU: 10.337, e: 0.9055, inc: 162.49, periodDays: 12137, M0: 5.5 },
+  },
+
   // ---------------- 卫星 ----------------
   moon: {
     radiusKm: 1737.4, rotationHours: 655.72,

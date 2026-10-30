@@ -128,12 +128,18 @@ for (const f of readdirSync(TMP).sort()) {
   // ---- 大天体之间穿插 ----
   // 只关心"大家伙"： satellites 为了可见被放大了几十倍，小幅靠近是必然结果，
   // 只有那个量级的大天体互相压在一起才是真 bug（历史上木星球体包住土星轨道那种）。
+  //
+  // ⚠ 高偏心率轨道（彗星、冥王星这类）必须跳过：半长轴根本不代表它们"待在哪"。
+  // 坦普尔-塔特尔 a=10.3 AU，却跑到 19.7 AU 外又插回 0.98 AU，横跨天王星轨道是物理事实，
+  // 拿半长轴比间距只会制造假警报。这类轨道改为单看近日点有没有陷进太阳（见下）。
+  const ECCENTRIC = 0.2;
   const bigThreshold = centre ? centre.size * 0.5 : 0;
   for (let i = 0; i < system.bodies.length; i++) {
     const A = system.bodies[i];
     for (let j = i + 1; j < system.bodies.length; j++) {
       const B = system.bodies[j];
       if (A.orbit?.a == null || B.orbit?.a == null) continue;
+      if ((A.orbit.e ?? 0) >= ECCENTRIC || (B.orbit.e ?? 0) >= ECCENTRIC) continue;
       const gap = Math.abs(A.orbit.a - B.orbit.a);
       const biggest = Math.max(extentOf(A), extentOf(B));
       if (biggest < bigThreshold) continue;
@@ -148,6 +154,27 @@ for (const f of readdirSync(TMP).sort()) {
     if (inner && inner.orbit.a - inner.size < system.scale.sunUnits * 1.1) {
       warn(`最内侧 ${inner.id}(${inner.orbit.a.toFixed(1)}) 距太阳表面(${system.scale.sunUnits})过近`);
     }
+  }
+
+  // ---- 彗星专项 ----
+  // 彗星的"位置"由近日点决定（远日点可以跑到几十 AU 外），所以只校验近日点没陷进太阳；
+  // 同时确认渲染偏心率只被调小、没被调大（调小是为避开被夸大的太阳，调大就是数据错了）。
+  for (const b of system.bodies) {
+    if (!b.comet) continue;
+    const eReal = b.orbit?.eReal ?? 0;
+    const eDraw = b.orbit?.e ?? 0;
+    const aAU = b.orbit?.aAU ?? 0;
+    const peri = (b.orbit?.a ?? 0) * (1 - eDraw);
+    if (eDraw > eReal + 1e-6) {
+      warn(`${b.id} 渲染偏心率 ${eDraw.toFixed(4)} 大于真实值 ${eReal.toFixed(4)}：只允许调小以避开被夸大的太阳球体`);
+    }
+    if (system.scale?.sunUnits && peri < system.scale.sunUnits) {
+      warn(`${b.id} 近日点 ${peri.toFixed(1)} 仍陷在太阳球体(${system.scale.sunUnits})内`);
+    }
+    info(
+      `${b.id} 活动区间：近日点 ${(aAU * (1 - eReal)).toFixed(2)} AU / 远日点 ${(aAU * (1 + eReal)).toFixed(1)} AU` +
+      `  渲染 e ${eReal.toFixed(4)}→${eDraw.toFixed(4)}  近日点 ${peri.toFixed(1)} 单位`
+    );
   }
 }
 

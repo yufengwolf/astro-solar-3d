@@ -26,6 +26,7 @@
     "build:neptune": "vite build --config vite.neptune.config.js",
     "build:pluto": "vite build --config vite.pluto.config.js",
     "check": "node scripts/check-scale.mjs",
+    "check:comet": "node scripts/check-comet.mjs",
     "sync": "node scripts/sync.mjs"
   },
   "devDependencies": {

@@ -18,6 +18,9 @@ import { AU_KM } from './data/bodies-real.js';
  * scale.distancePower  —— power 模式指数，越小内行星越外扩
  * scale.maxDistance    —— power 模式下最远天体映射到的场景单位
  * scale.sunUnits       —— 太阳单独指定半径
+ * scale.minPerihelionUnits —— 近日点下限（场景单位）。太阳球体本身是被夸大的，
+ *                         高偏心率彗星压缩后的近日点会陷进去，故只对这类轨道
+ *                         调小"渲染用"偏心率（真实值保留在 orbit.eReal）。
  */
 /**
  * 构造一把"尺寸换算尺"：给定系统，返回一个 sizeOf(def, factor)，
@@ -60,6 +63,12 @@ export function applyScale(system) {
   const power = scale.distancePower ?? 0.4;
   const maxDistance = scale.maxDistance ?? 340;
 
+  // 近日点下限（场景单位）：太阳的球体半径本身是被夸大的（真实比例下只有约 0.2 单位，
+  // 小到看不见），于是高偏心率彗星的近日点会"陷进"太阳里——哈雷近日点只有 0.587 AU，
+  // 压缩后约 12 单位，远小于太阳的 26 单位。这里把渲染用的偏心率收一点，
+  // 保证近日点停在太阳表面之外；真实值保留在 eReal，供彗尾活动强度按真实日心距计算。
+  const minPerihelion = scale.minPerihelionUnits ?? 0;
+
   for (const def of system.bodies) {
     def.size = sizer.sizeOf(def, exaggeration);
 
@@ -70,6 +79,16 @@ export function applyScale(system) {
         def.orbit.a = (Math.pow(aAU, power) / Math.pow(maxAU, power)) * maxDistance;
       } else {
         def.orbit.a = aKm * kRadius * (scale.distanceFactor ?? 1);
+      }
+
+      const eReal = def.orbit.e ?? 0;
+      def.orbit.eReal = eReal;
+      if (minPerihelion > 0 && eReal > 0 && def.orbit.a > 0) {
+        const perihelion = def.orbit.a * (1 - eReal);
+        if (perihelion < minPerihelion) {
+          // 只收偏心率、不动半长轴：轨道仍是细长椭圆，远日点分毫不变
+          def.orbit.e = Math.max(0, 1 - minPerihelion / def.orbit.a);
+        }
       }
     }
   }

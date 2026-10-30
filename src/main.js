@@ -8,6 +8,7 @@ import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createBody, solveKepler, orbitPoint, setCurrentExaggeration } from './bodies.js';
 import { applyScale, frameRadius, setBodyExaggeration } from './scale.js';
+import { createCometParts, updateComet } from './comet.js';
 
 const DEG = Math.PI / 180;
 
@@ -190,6 +191,13 @@ export function start(system) {
   const byId = new Map();
   for (const def of system.bodies) {
     const node = createBody(def);
+    // 彗星：彗发作为子节点挂在核上；两条尾巴必须挂到 scene 根——
+    // 尾巴要在**世界坐标**里始终背离太阳，挂在随轨道面倾斜/旋转的 plane 下无法定向。
+    if (def.comet && node.mesh) {
+      node.comet = createCometParts(def, node.mesh);
+      scene.add(node.comet.ion);
+      scene.add(node.comet.dust);
+    }
     if (def.parent && byId.has(def.parent)) {
       byId.get(def.parent).anchor.add(node.group);
     } else {
@@ -198,6 +206,9 @@ export function start(system) {
     nodes.push(node);
     byId.set(def.id, node);
   }
+
+  // 太阳的世界坐标：彗尾要背离它。总览里太阳就在原点；无太阳的系统退回光照方向。
+  const sunPos = new THREE.Vector3(...(system.camera?.target ?? [0, 0, 0]));
 
   // ---------- 小行星带 ----------
   const asteroids = [];
@@ -248,6 +259,13 @@ export function start(system) {
       updateBadge(v);
     });
 
+  // 彗尾强度：彗星只在接近太阳时才活动，长周期彗星在远日点要"等很久"才亮起来。
+  // 这个滑块只放大尾巴的长度与亮度，不改变活动规律（仍严格按 1/r² 随日心距变化）。
+  if (system.bodies.some((b) => b.comet)) {
+    settings.tailGain = 1;
+    gui.add(settings, 'tailGain', 0.5, 3, 0.1).name('彗尾强度 ×');
+  }
+
   // 角标：常驻显示当前放大倍数，明确"这是为了看清小天体而做的视觉放大"
   const badge = document.createElement('div');
   badge.id = 'exaggerationBadge';
@@ -283,6 +301,9 @@ export function start(system) {
       if (n.mesh) raycastTargets.push(n.mesh);
       if (n.atmosphere) raycastTargets.push(n.atmosphere);
       if (n.ring) raycastTargets.push(n.ring);
+      // 彗核只有几个像素，靠彗发提供可点击的面积；尾巴不参与拾取，
+      // 否则巨大的锥体会挡住后面天体的点击，且描边效果会很怪
+      if (n.comet) raycastTargets.push(n.comet.coma);
       if (n.model) n.model.traverse((c) => { if (c.isMesh) raycastTargets.push(c); });
     }
     if (sunMesh) raycastTargets.push(sunMesh);
@@ -400,6 +421,7 @@ export function start(system) {
         const M = (2 * Math.PI * elapsedDays) / T + (d.orbit.M0 ?? 0);
         const E = solveKepler(M, d.orbit.e ?? 0);
         const p = orbitPoint(d.orbit.a, d.orbit.e ?? 0, E);
+        n._E = E; // 彗尾要用偏近点角算真实日心距
         if (n.mesh) n.mesh.position.set(p.x, 0, p.z);
         else if (n.model) n.model.position.set(p.x, 0, p.z);
         n.anchor.position.set(p.x, 0, p.z);
@@ -417,6 +439,11 @@ export function start(system) {
         n.atmosphere.rotateY(((2 * Math.PI) / (d.atmosphereRotateHours / 24)) * dtDays);
       }
     }
+    // 彗发 / 彗尾：依赖本帧刚写好的位置与偏近点角，必须排在公转更新之后
+    for (const n of nodes) {
+      if (n.comet) updateComet(n, sunPos, settings.tailGain ?? 1);
+    }
+
     if (sunMesh) sunMesh.rotateY(((2 * Math.PI) / (609.12 / 24)) * dtDays);
 
     for (const a of asteroids) {
