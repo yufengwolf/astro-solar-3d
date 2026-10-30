@@ -67,6 +67,25 @@ export const REAL = {
     orbit: { aAU: 39.482, e: 0.2488, inc: 17.16, periodDays: 90560 },
   },
 
+  // ---------------- 矮行星（冥王星见上） ----------------
+  // 公转周期一律按开普勒第三定律由半长轴推得（P = a^1.5 年），与行星口径一致
+  ceres: {
+    radiusKm: 473, rotationHours: 9.074, axialTilt: 4,
+    orbit: { aAU: 2.7655, e: 0.0785, inc: 10.59, periodDays: 1681.6 },
+  },
+  makemake: {
+    radiusKm: 715, rotationHours: 22.83,
+    orbit: { aAU: 45.43, e: 0.1613, inc: 28.98, periodDays: 111842 },
+  },
+  haumea: {
+    radiusKm: 780, rotationHours: 3.915,
+    orbit: { aAU: 43.116, e: 0.1964, inc: 28.19, periodDays: 103398 },
+  },
+  eris: {
+    radiusKm: 1163, rotationHours: 378,
+    orbit: { aAU: 67.864, e: 0.4340, inc: 44.04, periodDays: 204200 },
+  },
+
   // ---------------- 卫星 ----------------
   moon: {
     radiusKm: 1737.4, rotationHours: 655.72,
