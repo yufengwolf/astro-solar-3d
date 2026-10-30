@@ -1,28 +1,80 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>太阳系</title>
-    <link rel="stylesheet" href="style.css">
-    <style>
-        #gui-container {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 10;
-        }
-    </style>
+    <title>太阳系 3D 交互可视化</title>
+    <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-    <div id="gui-container"></div>
-    <div><script type="module" src="./entries/solar.js"></script></div>
-    <div id="planetInfo" class="planet-info">
-        <div class="planet-info-content">
-            <span class="close-btn" onclick="closeInfo()">&times;</span>
-            <h2 id="planetName"></h2>
-            <p id="planetDetails"></p>
-        </div>
+    <div class="home-wrap">
+        <header class="home-header">
+            <h1>太阳系 3D 交互可视化</h1>
+            <p>基于 JPL / PDS 真实轨道参数构建。选择一个系统进入：每个页面都支持「视觉放大 ×N」看清小卫星、多取景视角切换与全屏。轨道比例真实，天体尺寸可按需放大。</p>
+        </header>
+
+        <main class="home-grid">
+            <a class="home-card" style="--accent:#ffcf4d" href="./overview.html">
+                <div class="hc-sub">Solar System</div>
+                <div class="hc-name">太阳系总览</div>
+                <div class="hc-desc">太阳 + 八大行星 + 小行星带 / 柯伊伯带。行星半径与轨道距离经幂律压缩，便于同屏观察（想看近真实比例请进各子系统）。</div>
+                <div class="hc-go">进入 →</div>
+            </a>
+
+            <a class="home-card" style="--accent:#5aa9ff" href="./earth-moon.html">
+                <div class="hc-sub">Earth · Moon</div>
+                <div class="hc-name">地月系统</div>
+                <div class="hc-desc">地球位于原点只自转，月球公转 + 自转并始终以同一面朝向地球（潮汐锁定）。</div>
+                <div class="hc-go">进入 →</div>
+            </a>
+
+            <a class="home-card" style="--accent:#e2683c" href="./mars.html">
+                <div class="hc-sub">Mars</div>
+                <div class="hc-name">火星系统</div>
+                <div class="hc-desc">火星 + 火卫一 / 火卫二（GLB 模型）。轨道完全按真实比例呈现，卫星本体放大以便观察。</div>
+                <div class="hc-go">进入 →</div>
+            </a>
+
+            <a class="home-card" style="--accent:#d8a878" href="./jupiter.html">
+                <div class="hc-sub">Jupiter</div>
+                <div class="hc-name">木星系统</div>
+                <div class="hc-desc">17 颗卫星：内卫星、伽利略四卫（木卫一至木卫四）、以及远距不规则逆行卫星。提供 4 档取景预设。</div>
+                <div class="hc-go">进入 →</div>
+            </a>
+
+            <a class="home-card" style="--accent:#e6c25a" href="./saturn.html">
+                <div class="hc-sub">Saturn</div>
+                <div class="hc-name">土星系统</div>
+                <div class="hc-desc">壮观光环 + 16 颗卫星：牧羊犬卫星、共轨的土卫十/十一、特洛伊卫星，以及逆行的土卫九。</div>
+                <div class="hc-go">进入 →</div>
+            </a>
+
+            <a class="home-card" style="--accent:#7fe3e0" href="./uranus.html">
+                <div class="hc-sub">Uranus</div>
+                <div class="hc-name">天王星系统</div>
+                <div class="hc-desc">轴倾角 97.77°，几乎是「躺着」自转，卫星系统随之竖立。15 颗卫星，9 颗里 8 颗逆行。</div>
+                <div class="hc-go">进入 →</div>
+            </a>
+
+            <a class="home-card" style="--accent:#5a7bff" href="./neptune.html">
+                <div class="hc-sub">Neptune</div>
+                <div class="hc-name">海王星系统</div>
+                <div class="hc-desc">14 颗卫星全部呈现：逆行的海卫一、偏心率 0.75 的海卫二，以及远至希尔球边缘的不规则卫星。</div>
+                <div class="hc-go">进入 →</div>
+            </a>
+
+            <a class="home-card" style="--accent:#b9a98f" href="./pluto.html">
+                <div class="hc-sub">Pluto</div>
+                <div class="hc-name">冥王星系统</div>
+                <div class="hc-desc">冥王星 + 卡戎（双矮行星系统，质心在冥王星之外）+ 4 颗小卫星的近共振链。</div>
+                <div class="hc-go">进入 →</div>
+            </a>
+        </main>
+
+        <footer class="home-footer">
+            所有页面：轨道比例真实 · 天体尺寸可「视觉放大 ×N」· 多取景视角 · 支持全屏（移动端自动横屏）<br>
+            基于 Three.js · 数据取自 JPL / PDS · MIT 许可
+        </footer>
     </div>
 </body>
 </html>

@@ -16,7 +16,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:solar": "vite build --config vite.solar.config.js",
+    "build:home": "vite build --config vite.home.config.js",
+    "build:overview": "vite build --config vite.overview.config.js",
     "build:earth-moon": "vite build --config vite.earth-moon.config.js",
     "build:mars": "vite build --config vite.mars.config.js",
     "build:jupiter": "vite build --config vite.jupiter.config.js",

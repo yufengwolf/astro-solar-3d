@@ -19,19 +19,39 @@ import { AU_KM } from './data/bodies-real.js';
  * scale.maxDistance    —— power 模式下最远天体映射到的场景单位
  * scale.sunUnits       —— 太阳单独指定半径
  */
-export function applyScale(system) {
+/**
+ * 构造一把"尺寸换算尺"：给定系统，返回一个 sizeOf(def, factor)，
+ * 把某天体的真实半径映射成场景单位半径。半径换算与轨道换算解耦——
+ * 后者只依赖距离，前者才受放大倍数影响。
+ */
+function makeSizer(system) {
   const scale = system.scale ?? {};
   const refId = scale.radiusRef ?? system.bodies[0].id;
   const refDef = system.bodies.find((b) => b.id === refId);
   if (!refDef) throw new Error(`scale.radiusRef 指向了不存在的天体: ${refId}`);
 
   const refUnits = scale.radiusRefUnits ?? 6.4;
-  // km -> 场景单位：轨道距离用这把尺子
-  const kRadius = refUnits / refDef.realRadiusKm;
-  // 半径单独换算：以参考天体为基准做幂律压缩，参考天体本身恒等于 refUnits
   const radiusPower = scale.radiusPower ?? 1;
-  const exaggeration = scale.bodyExaggeration ?? 1;
   const minUnits = scale.minBodyUnits ?? 0;
+
+  return {
+    refDef,
+    sizeOf(def, factor = 1) {
+      return Math.max(
+        refUnits * Math.pow(def.realRadiusKm / refDef.realRadiusKm, radiusPower) * factor,
+        minUnits
+      );
+    },
+  };
+}
+
+export function applyScale(system) {
+  const scale = system.scale ?? {};
+  const sizer = makeSizer(system);
+  const exaggeration = scale.bodyExaggeration ?? 1;
+  const refUnits = scale.radiusRefUnits ?? 6.4;
+  // km -> 场景单位：轨道距离用这把尺子（注意是"每 km 对应多少单位"，不是 refUnits 本身）
+  const kRadius = refUnits / sizer.refDef.realRadiusKm;
 
   const orbitsAU = system.bodies
     .map((b) => b.orbit?.aAU)
@@ -41,10 +61,7 @@ export function applyScale(system) {
   const maxDistance = scale.maxDistance ?? 340;
 
   for (const def of system.bodies) {
-    def.size = Math.max(
-      refUnits * Math.pow(def.realRadiusKm / refDef.realRadiusKm, radiusPower) * exaggeration,
-      minUnits
-    );
+    def.size = sizer.sizeOf(def, exaggeration);
 
     if (def.orbit) {
       const aKm = def.orbit.aAU != null ? def.orbit.aAU * AU_KM : def.orbit.aKm;
@@ -57,6 +74,24 @@ export function applyScale(system) {
     }
   }
   return kRadius;
+}
+
+/**
+ * 运行时放大"天体尺寸"（不影响轨道距离）。
+ *
+ * 设计：中心天体（无轨道者，如木星/太阳）保持原始尺度不动，
+ * 只放大次级天体（卫星/行星）。目的——避免把放大倍数推高后，
+ * 行星本体膨胀到把自家卫星轨道"吞掉"。放大倍数越大，小卫星越清晰。
+ *
+ * @param {object} system
+ * @param {number} factor 放大倍数（1 = 物理推导尺寸，即严谨模式）
+ */
+export function setBodyExaggeration(system, factor) {
+  const sizer = makeSizer(system);
+  for (const def of system.bodies) {
+    // 中心天体（无轨道）不放大，避免吞轨道
+    if (def.orbit) def.size = sizer.sizeOf(def, factor);
+  }
 }
 
 /**

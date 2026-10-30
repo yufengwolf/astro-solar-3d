@@ -9,7 +9,8 @@ const here = dirname(fileURLToPath(import.meta.url));
  * 且共享 dist/assets/（three.js 等公共块跨页只下载一次）。
  */
 export const ENTRIES = {
-  solar: 'index.html',
+  home: 'index.html',
+  overview: 'overview.html',
   earthMoon: 'earth-moon.html',
   mars: 'mars.html',
   jupiter: 'jupiter.html',

@@ -6,8 +6,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { createBody, solveKepler, orbitPoint } from './bodies.js';
-import { applyScale, frameRadius } from './scale.js';
+import { createBody, solveKepler, orbitPoint, setCurrentExaggeration } from './bodies.js';
+import { applyScale, frameRadius, setBodyExaggeration } from './scale.js';
 
 const DEG = Math.PI / 180;
 
@@ -49,6 +49,25 @@ function fitCamera(system, camera, controls, frameTo) {
   controls.minDistance = Math.max(0.05, system.bodies[0].size * 0.3);
   controls.maxDistance = pose.maxDistance;
   return pose;
+}
+
+/**
+ * 把当前放大倍数应用到已构建的天体节点（仅改 scale / 重建环几何体，不重建球几何体）。
+ * 中心天体 def.size 未变，其 scale 也随之保持；仅次级天体变大。
+ */
+function applyExaggerationToNodes(nodes, factor) {
+  for (const n of nodes) {
+    const s = n.def.size;
+    if (n.mesh) n.mesh.scale.setScalar(s);
+    if (n.atmosphere) n.atmosphere.scale.setScalar((s + 0.1) / s);
+    if (n.ring) {
+      const inner = n.def.ring.innerRadius ?? s * (n.def.ring.innerScale ?? 1.24);
+      const outer = n.def.ring.outerRadius ?? s * (n.def.ring.outerScale ?? 2.27);
+      n.ring.geometry.dispose();
+      n.ring.geometry = new THREE.RingGeometry(inner, outer, 64);
+    }
+    if (n.model && n._baseScale) n.model.scale.setScalar(n._baseScale * factor);
+  }
 }
 
 /**
@@ -215,6 +234,29 @@ export function start(system) {
   const guiContainer = document.getElementById('gui-container');
   if (guiContainer) guiContainer.appendChild(gui.domElement);
   gui.add(settings, 'timeScale', 0, 200).name('时间流速(天/秒)');
+
+  // ---------- 视觉放大（仅放大天体尺寸，轨道比例不变）----------
+  // 默认 1 = 物理推导尺寸（严谨模式）。调大可让原本不足 1 像素的小卫星清晰可见。
+  // 中心天体（无轨道者）不参与放大，避免高倍率下膨胀到吞掉自家卫星轨道。
+  settings.bodyExaggeration = system.scale?.bodyExaggeration ?? 1;
+  gui.add(settings, 'bodyExaggeration', 1, 15, 0.5)
+    .name('视觉放大 ×')
+    .onChange((v) => {
+      setBodyExaggeration(system, v);
+      applyExaggerationToNodes(nodes, v);
+      setCurrentExaggeration(v);
+      updateBadge(v);
+    });
+
+  // 角标：常驻显示当前放大倍数，明确"这是为了看清小天体而做的视觉放大"
+  const badge = document.createElement('div');
+  badge.id = 'exaggerationBadge';
+  document.body.appendChild(badge);
+  function updateBadge(f) {
+    const txt = Number.isInteger(f) ? String(f) : f.toFixed(1);
+    badge.textContent = `视觉放大 ×${txt}（仅放大天体尺寸，轨道比例不变）`;
+  }
+  updateBadge(settings.bodyExaggeration);
   if (views.length > 1) {
     const labels = views.map((v) => v.label);
     // 默认选中与 camera.frameTo 对应的那一档（views[0] 不一定就是默认视角）
@@ -284,9 +326,13 @@ export function start(system) {
     const detailEl = document.getElementById('planetDetails');
     if (!box || !nameEl || !detailEl) return;
     nameEl.innerText = def.name;
-    detailEl.innerText = Object.entries(def.info ?? {})
+    let detail = Object.entries(def.info ?? {})
       .map(([k, v]) => `${k}: ${v}`)
       .join('\n');
+    if (settings.bodyExaggeration > 1) {
+      detail += `\n视觉放大: ×${settings.bodyExaggeration}（天体尺寸已放大，轨道比例不变）`;
+    }
+    detailEl.innerText = detail;
     box.style.display = 'block';
   }
   function closeInfo() {

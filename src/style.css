@@ -38,3 +38,100 @@ p {
     color: white; 
     line-height: 1.5; 
 }
+
+/* 视觉放大角标：常驻显示当前放大倍数，明确这是为看清小天体而做的视觉放大 */
+#exaggerationBadge {
+    position: fixed;
+    left: 1%;
+    bottom: 2%;
+    z-index: 11;
+    background: rgba(0, 0, 35, 0.78);
+    color: #ffe066;
+    padding: 6px 12px;
+    border: 1px solid #888;
+    border-radius: 4px;
+    font-family: 'Arial', sans-serif;
+    font-size: 13px;
+    pointer-events: none;
+    max-width: 60%;
+}
+
+/* ===== 导航主页（index.html） ===== */
+.home-wrap {
+    min-height: 100vh;
+    box-sizing: border-box;
+    padding: 48px 20px 56px;
+    background:
+        radial-gradient(ellipse at 50% -10%, #1b2a4a 0%, #0a0e1a 55%, #05060c 100%);
+    color: #eaf0ff;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+.home-header { text-align: center; margin-bottom: 40px; }
+.home-header h1 {
+    font-size: clamp(26px, 4vw, 44px);
+    margin: 0 0 12px;
+    letter-spacing: 2px;
+    background: linear-gradient(90deg, #ffd76b, #7fe3e0, #5a7bff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+.home-header p {
+    color: #9fb0d0;
+    max-width: 700px;
+    margin: 0 auto;
+    line-height: 1.7;
+    font-size: 15px;
+}
+.home-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 20px;
+    max-width: 1120px;
+    margin: 0 auto;
+}
+.home-card {
+    position: relative;
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 22px 20px 18px;
+    overflow: hidden;
+    transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.home-card::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; right: 0;
+    height: 4px;
+    background: var(--accent, #6cf);
+}
+.home-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent, #6cf);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 0 0 1px var(--accent, #6cf) inset;
+}
+.home-card .hc-sub {
+    color: #8fa3c8;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}
+.home-card .hc-name { font-size: 20px; font-weight: 700; margin: 4px 0 2px; }
+.home-card .hc-desc {
+    color: #c4d0e6;
+    font-size: 13.5px;
+    line-height: 1.65;
+    margin: 12px 0 14px;
+}
+.home-card .hc-go { font-size: 13px; color: var(--accent, #6cf); font-weight: 600; }
+.home-footer {
+    text-align: center;
+    color: #7c8aa8;
+    font-size: 13px;
+    margin-top: 40px;
+    line-height: 1.9;
+}

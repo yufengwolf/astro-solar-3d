@@ -5,6 +5,15 @@ const loadTexture = new THREE.TextureLoader();
 const DEG = Math.PI / 180;
 
 /**
+ * 当前视觉放大倍数，由 main.js 在滑块变化时同步。
+ * 仅用于 GLB 模型天体（火星卫星等）在异步加载完成后按当前倍数初始化尺寸。
+ */
+let currentExaggeration = 1;
+export function setCurrentExaggeration(v) {
+  currentExaggeration = v;
+}
+
+/**
  * 椭圆轨道线。
  * 关键：椭圆中心在 (-a*e, 0)，因此原点（中心天体）落在椭圆的**焦点**上，
  * 而不是圆心——这才是真实的开普勒轨道。
@@ -68,7 +77,9 @@ export function createBody(def) {
         shininess: 4,
       });
     }
-    mesh = new THREE.Mesh(new THREE.SphereGeometry(def.size, 32, 20), material);
+    // 单位球几何体 + 按 def.size 缩放：运行时改尺寸只需改 mesh.scale，无需重建几何体
+    mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20), material);
+    mesh.scale.setScalar(def.size);
     mesh.userData.bodyId = def.id;
     if (def.tilt) mesh.rotation.z = def.tilt * DEG;
 
@@ -80,7 +91,10 @@ export function createBody(def) {
         depthTest: true,
         depthWrite: false,
       });
-      atmosphere = new THREE.Mesh(new THREE.SphereGeometry(def.size + 0.1, 32, 20), atmMat);
+      // 大气层挂在 mesh 下，会继承 mesh 的 scale（=def.size），
+      // 故本地 scale 要除以 def.size，使净半径恒为 def.size + 0.1
+      atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20), atmMat);
+      atmosphere.scale.setScalar((def.size + 0.1) / def.size);
       atmosphere.rotation.z = 0.41;
       atmosphere.userData.bodyId = def.id;
       mesh.add(atmosphere);
@@ -144,7 +158,8 @@ export function createBody(def) {
         const native = sphere.radius || 1;
         const wanted = def.model.radiusUnits ?? def.size * 4;
         const s = wanted / native;
-        obj.scale.setScalar(s);
+        obj.scale.setScalar(s * currentExaggeration);
+        node._baseScale = s; // 记录基准缩放，供运行时放大倍数调整
         obj.position.copy(sphere.center).multiplyScalar(-s); // 居中
         obj.traverse((child) => {
           if (child.isMesh) {

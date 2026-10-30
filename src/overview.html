@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>太阳系总览</title>
+    <link rel="stylesheet" href="./style.css">
+    <style>
+        #gui-container {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="gui-container"></div>
+    <script type="module" src="./entries/overview.js"></script>
+    <div id="planetInfo" class="planet-info">
+        <div class="planet-info-content">
+            <span class="close-btn" onclick="closeInfo()">&times;</span>
+            <h2 id="planetName"></h2>
+            <p id="planetDetails"></p>
+        </div>
+    </div>
+</body>
+</html>
