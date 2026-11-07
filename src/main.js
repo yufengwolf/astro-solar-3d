@@ -484,7 +484,10 @@ export function start(system) {
   function focusOn(def, object) {
     const box = document.getElementById('planetInfo');
     if (box) box.style.display = 'none';
-    paused = false;
+    // 进入聚焦立即冻结时间：天体（公转+自转）原地停住，相机飞向它"此刻"的位置，
+    // 落地即严丝合缝居中。否则飞行途中天体仍在运动，等相机抵达时它已漂移出旧的落点，
+    // 菜单聚焦（通常要飞很远）尤其明显——看起来就是"聚焦到一个空点，天体已不在那"。
+    paused = true;
 
     const worldPos = new THREE.Vector3();
     object.getWorldPosition(worldPos);
