@@ -18,6 +18,7 @@
     "build": "vite build",
     "build:home": "vite build --config vite.home.config.js",
     "build:overview": "vite build --config vite.overview.config.js",
+    "build:galaxy": "vite build --config vite.galaxy.config.js",
     "build:earth-moon": "vite build --config vite.earth-moon.config.js",
     "build:mars": "vite build --config vite.mars.config.js",
     "build:jupiter": "vite build --config vite.jupiter.config.js",

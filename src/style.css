@@ -198,6 +198,7 @@ p {
 .bn-item.type-planet .bn-dot { background: #6db4ff; color: #6db4ff; }
 .bn-item.type-dwarf .bn-dot { background: #c79bff; color: #c79bff; }
 .bn-item.type-comet .bn-dot { background: #7fe3e0; color: #7fe3e0; }
+.bn-item.type-star .bn-dot { background: #fff0a6; color: #fff0a6; box-shadow: 0 0 6px #ffd86b; }
 .bn-item.type-moon .bn-dot { background: #b9c2d6; color: #b9c2d6; }
 .bn-name { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bn-go {

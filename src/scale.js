@@ -37,14 +37,17 @@ function makeSizer(system) {
   const refUnits = scale.radiusRefUnits ?? 6.4;
   const radiusPower = scale.radiusPower ?? 1;
   const minUnits = scale.minBodyUnits ?? 0;
+  // 参考天体若没有 realRadiusKm（如银河系里的恒星锚点），用 1 兜底，避免 sizeOf / kRadius 出 NaN
+  const refRealKm = refDef.realRadiusKm || 1;
 
   return {
     refDef,
     sizeOf(def, factor = 1) {
       // def.minSizeUnits 可单独覆盖系统下限：彗核真实半径只有几 km，
       // 若被系统的 minBodyUnits 兜底，会大到和谷神星同量级——而彗核本就该几乎看不见。
+      const dKm = def.realRadiusKm || refRealKm;
       return Math.max(
-        refUnits * Math.pow(def.realRadiusKm / refDef.realRadiusKm, radiusPower) * factor,
+        refUnits * Math.pow(dKm / refRealKm, radiusPower) * factor,
         def.minSizeUnits ?? minUnits
       );
     },
@@ -57,7 +60,7 @@ export function applyScale(system) {
   const exaggeration = scale.bodyExaggeration ?? 1;
   const refUnits = scale.radiusRefUnits ?? 6.4;
   // km -> 场景单位：轨道距离用这把尺子（注意是"每 km 对应多少单位"，不是 refUnits 本身）
-  const kRadius = refUnits / sizer.refDef.realRadiusKm;
+  const kRadius = refUnits / (sizer.refDef.realRadiusKm || 1);
 
   const orbitsAU = system.bodies
     .map((b) => b.orbit?.aAU)
@@ -73,7 +76,13 @@ export function applyScale(system) {
   const minPerihelion = scale.minPerihelionUnits ?? 0;
 
   for (const def of system.bodies) {
-    def.size = sizer.sizeOf(def, exaggeration);
+    // fixedSize：天体自带场景单位半径（如银河系里的恒星锚点），直接用配置值，
+    // 不参与"每 km 对应多少单位"的半径换算；def.size 仍被赋值，供 createBody / 自检使用。
+    if (def.fixedSize) {
+      def.size = def.fixedSize;
+    } else {
+      def.size = sizer.sizeOf(def, exaggeration);
+    }
 
     if (def.orbit) {
       const aKm = def.orbit.aAU != null ? def.orbit.aAU * AU_KM : def.orbit.aKm;
@@ -124,6 +133,8 @@ export function setBodyExaggeration(system, factor) {
  * @param {string} [overrideFrameTo] 覆盖 system.camera.frameTo（多视角切换时用）
  */
 export function frameRadius(system, overrideFrameTo) {
+  // 显式取景半径（如银河系：框住整个银盘，而非中心的恒星锚点）
+  if (system.extent != null) return system.extent;
   const frameId = overrideFrameTo ?? system.camera?.frameTo ?? 'auto';
   let radius = 0;
 

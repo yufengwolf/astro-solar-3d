@@ -11,6 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const ENTRIES = {
   home: 'index.html',
   overview: 'overview.html',
+  galaxy: 'galaxy.html',
   earthMoon: 'earth-moon.html',
   mars: 'mars.html',
   jupiter: 'jupiter.html',

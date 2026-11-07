@@ -65,7 +65,8 @@ for (const f of readdirSync(TMP).sort()) {
 
   // ---- 结构检查（在 applyScale 之前）----
   for (const b of system.bodies) {
-    if (!REAL[b.id]) warn(`${f}: 天体 ${b.id} 不在 REAL 数据表中`);
+    // fixedSize 天体（如银河系里的恒星锚点）本就不在 REAL 表里，跳过该警告
+    if (!REAL[b.id] && !b.fixedSize) warn(`${f}: 天体 ${b.id} 不在 REAL 数据表中`);
     if (b.parent && !system.bodies.some((x) => x.id === b.parent)) {
       warn(`${f}: ${b.id} 的 parent=${b.parent} 不存在`);
     }
@@ -115,7 +116,8 @@ for (const f of readdirSync(TMP).sort()) {
     // 默认视角内应当可见（<0.15% ≈ 1px 即视为确实看不见）；视角外的远距卫星只作说明
     const inDefault = b.orbit?.a == null || b.orbit?.a <= defR * 1.05;
     const defPct = ((shown * 2) / defVisibleH) * 100;
-    if (inDefault && defPct < 0.15) {
+    // fixedSize 天体（银河系恒星锚点）刻意是大场景里的小点，其"小"是预期的，不算问题
+    if (inDefault && defPct < 0.15 && !b.fixedSize) {
       warn(`${b.id} 落在默认视角内却只有屏高 ${defPct.toFixed(2)}%（≈${(defPct * 9).toFixed(1)}px @900px）：请调小默认 view 的取景范围或调大 minBodyUnits`);
     }
     info(`${b.id.padEnd(11)} 半径=${shown.toFixed(2).padStart(6)} 轨道=${(b.orbit?.a == null ? '中心' : b.orbit.a.toFixed(1)).padStart(8)} 默认档占屏=${defPct.toFixed(2)}%${inDefault ? '' : '（在默认视角外，需切档/滚轮拉远）'}${b.orbit?.inc > 90 ? '  逆行' : ''}`);

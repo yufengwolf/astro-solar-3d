@@ -12,6 +12,122 @@ import { createCometParts, updateComet, updateCometViewport, cometGlobals } from
 
 const DEG = Math.PI / 180;
 
+// ---------- 银河系恒星点云（定性示意）----------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function randn(rng) {
+  let u = 0, v = 0;
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+let _discTex = null;
+function discTexture() {
+  if (_discTex) return _discTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.25, 'rgba(255,255,255,0.85)');
+  grd.addColorStop(0.6, 'rgba(255,255,255,0.18)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  _discTex = new THREE.CanvasTexture(c);
+  return _discTex;
+}
+
+// 恒星光晕：加法混合的柔光精灵，让点云里的锚点恒星（太阳/SagA*）读起来像"发光星"
+function makeStarHalo(color, size) {
+  const mat = new THREE.SpriteMaterial({
+    map: discTexture(),
+    color,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const s = new THREE.Sprite(mat);
+  s.scale.setScalar(size);
+  return s;
+}
+
+// 按配置生成一整片银河系恒星：旋臂（对数螺旋）+ 核球 + 银晕，返回 THREE.Points
+function buildGalaxyField(g, scaleKpc) {
+  const rng = mulberry32(g.seed ?? 1337);
+  const total = g.armStars + g.bulgeStars + g.haloStars;
+  const positions = new Float32Array(total * 3);
+  const colors = new Float32Array(total * 3);
+  const col = new THREE.Color();
+  const diskR = g.diskRadiusKpc;
+  const thick = g.thicknessKpc;
+  let i = 0;
+  const push = (x, y, z, cr, cg, cb, bright) => {
+    positions[i * 3] = x * scaleKpc;
+    positions[i * 3 + 1] = y * scaleKpc;
+    positions[i * 3 + 2] = z * scaleKpc;
+    col.setRGB(Math.min(1, cr * bright), Math.min(1, cg * bright), Math.min(1, cb * bright));
+    colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+    i++;
+  };
+  // 旋臂恒星（向中心聚集，沿对数螺旋分布，带宽度散布）
+  for (let a = 0; a < g.armStars; a++) {
+    const arm = a % g.armCount;
+    const rr = Math.pow(rng(), 0.55) * diskR;
+    const armBase = arm * (Math.PI * 2 / g.armCount);
+    const ang = armBase + rr * g.armTwist + randn(rng) * (g.armSpread / (rr * 0.4 + 1));
+    const rad = rr + randn(rng) * g.armSpread * 0.5;
+    const x = Math.cos(ang) * rad;
+    const z = Math.sin(ang) * rad;
+    const y = randn(rng) * thick * (1 - rr / (diskR * 1.5));
+    const t = rng();
+    let cr, cg, cb;
+    if (t < 0.55) { cr = 1.0; cg = 0.95; cb = 0.82; }       // 黄白
+    else if (t < 0.8) { cr = 0.78; cg = 0.86; cb = 1.0; }   // 蓝白
+    else { cr = 1.0; cg = 0.72; cb = 0.5; }                 // 橙红
+    push(x, y, z, cr, cg, cb, 0.9 + rng() * 0.3);
+  }
+  // 核球（中心密集的椭球）
+  for (let b = 0; b < g.bulgeStars; b++) {
+    const r = Math.pow(rng(), 0.5) * 3.0;
+    const theta = Math.acos(2 * rng() - 1);
+    const phi = 2 * Math.PI * rng();
+    const x = r * Math.sin(theta) * Math.cos(phi);
+    const y = r * Math.cos(theta) * 0.7;
+    const z = r * Math.sin(theta) * Math.sin(phi);
+    push(x, y, z, 1.0, 0.85, 0.6, 1.0 + rng() * 0.4);
+  }
+  // 银晕（稀疏、偏暗的球壳）
+  for (let h = 0; h < g.haloStars; h++) {
+    const r = (0.4 + rng()) * diskR * 1.3;
+    const theta = Math.acos(2 * rng() - 1);
+    const phi = 2 * Math.PI * rng();
+    const x = r * Math.sin(theta) * Math.cos(phi);
+    const y = r * Math.cos(theta) * 0.5;
+    const z = r * Math.sin(theta) * Math.sin(phi);
+    push(x, y, z, 0.8, 0.85, 1.0, 0.4 + rng() * 0.3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({
+    size: g.pointSize ?? 0.16,
+    map: discTexture(),
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  });
+  return new THREE.Points(geo, mat);
+}
+
 /**
  * 算出某个"取景范围"下的相机位姿（不改动任何状态，纯计算，便于切换视角时复用）。
  * @param {object} system
@@ -191,6 +307,9 @@ export function start(system) {
   // ---------- 构建天体 ----------
   const nodes = [];
   const byId = new Map();
+  // 银河系：所有恒星点 + 锚点天体挂在一个 group 下，整体缓慢自转（聚焦时冻结）
+  const galaxyGroup = system.galaxy ? new THREE.Group() : null;
+  if (galaxyGroup) scene.add(galaxyGroup);
   for (const def of system.bodies) {
     const node = createBody(def);
     // 彗星：彗发作为子节点挂在核上；两条尾巴必须挂到 scene 根——
@@ -206,10 +325,30 @@ export function start(system) {
     if (def.parent && byId.has(def.parent)) {
       byId.get(def.parent).anchor.add(node.group);
     } else {
-      scene.add(node.group);
+      (galaxyGroup || scene).add(node.group);
+    }
+    // 银河系里的天体用 galaxyPos（千秒差距）定位，而非公转轨道
+    if (def.galaxyPos && system.galaxy) {
+      const k = system.galaxy.scaleKpc ?? 1;
+      node.group.position.set(def.galaxyPos[0] * k, def.galaxyPos[1] * k, def.galaxyPos[2] * k);
+    }
+    // 恒星锚点：核自发光（提亮以触发 bloom）+ 加法混合光晕
+    if (def.star && node.mesh) {
+      const c = new THREE.Color(def.color ?? 0xffffff).multiplyScalar(1.6);
+      node.mesh.material = new THREE.MeshBasicMaterial({ color: c });
+      node.mesh.material.toneMapped = false;
+      node.halo = makeStarHalo(def.color ?? 0xffffff, def.glowSize ?? (def.fixedSize ?? 1) * 6);
+      node.halo.userData.bodyId = def.id;
+      node.group.add(node.halo);
     }
     nodes.push(node);
     byId.set(def.id, node);
+  }
+
+  // 银河系：恒星点云（旋臂 + 核球 + 银晕）挂到 galaxyGroup，随银盘一起自转
+  if (system.galaxy) {
+    const field = buildGalaxyField(system.galaxy, system.galaxy.scaleKpc ?? 1);
+    (galaxyGroup || scene).add(field);
   }
 
   // 太阳的世界坐标：彗尾要背离它。总览里太阳就在原点；无太阳的系统退回光照方向。
@@ -315,6 +454,7 @@ export function start(system) {
       // 彗核只有几个像素，靠彗发提供可点击的面积；尾巴不参与拾取，
       // 否则巨大的锥体会挡住后面天体的点击，且描边效果会很怪
       if (n.comet) raycastTargets.push(n.comet.coma);
+      if (n.halo) raycastTargets.push(n.halo);
       if (n.model) n.model.traverse((c) => { if (c.isMesh) raycastTargets.push(c); });
     }
     if (sunMesh) raycastTargets.push(sunMesh);
@@ -333,6 +473,7 @@ export function start(system) {
   const DWARF = new Set(['ceres', 'pluto', 'haumea', 'makemake', 'eris']);
   function bodyType(b) {
     if (b.comet) return 'comet';
+    if (b.star) return 'star';
     if (b.parent) return 'moon';
     if (DWARF.has(b.id)) return 'dwarf';
     return 'planet';
@@ -401,12 +542,12 @@ export function start(system) {
       row.appendChild(dot);
       row.appendChild(name);
       row.onclick = () => selectBody(e.id);
-      // 有卫星系统的行星：行内"卫星系"标签直达下钻
+      // 有下钻入口的天体：行内标签直达（行星→"卫星系"，太阳→"太阳系"等，可用 childSystemLabel 覆盖）
       if (e.def && e.def.childSystem) {
         const go = document.createElement('span');
         go.className = 'bn-go';
-        go.textContent = '卫星系';
-        go.title = '进入卫星系统';
+        go.textContent = e.def.childSystemLabel ?? '卫星系';
+        go.title = '进入' + (e.def.childSystemLabel ?? '卫星系统');
         go.onclick = (ev) => {
           ev.stopPropagation();
           window.location.href = e.def.childSystem;
@@ -466,7 +607,10 @@ export function start(system) {
     if (def.childSystem) {
       const btn = document.createElement('button');
       btn.className = 'child-btn';
-      btn.textContent = '进入' + def.name + '卫星系统 →';
+      const goLabel = def.childSystemLabel
+        ? '进入' + def.childSystemLabel + ' →'
+        : '进入' + def.name + '卫星系统 →';
+      btn.textContent = goLabel;
       btn.onclick = () => { window.location.href = def.childSystem; };
       box.querySelector('.planet-info-content').appendChild(btn);
     }
@@ -566,6 +710,11 @@ export function start(system) {
       if (n.comet) updateComet(n, sunPos, settings.tailGain ?? 1);
     }
 
+    // 银河系整体缓慢自转（聚焦时冻结，便于观察单颗恒星）
+    if (galaxyGroup && !paused) {
+      galaxyGroup.rotation.y += dtSec * (system.galaxy?.rotateSpeed ?? 0.006);
+    }
+
     if (sunMesh) sunMesh.rotateY(((2 * Math.PI) / (609.12 / 24)) * dtDays);
 
     for (const a of asteroids) {
@@ -606,14 +755,16 @@ export function start(system) {
   // ---------- 左侧天体快捷菜单（注入式，所有系统页共用）----------
   buildBodyNav();
 
-  // ---------- 缩小触发返回：卫星系统页拉到最外圈再往外滚，自动回上级系统 ----------
-  // 这就是用户说的"有个范围边界"——镜头到顶后再继续缩小即视为"退出本系统"。
-  if (system.parentSystem) {
+  // ---------- 缩小触发外层：拉到最外圈再往外滚，自动跳到"上一级"系统 ----------
+  // 卫星系统页：回上级（parentSystem）；太阳系总览页：触发"外层空间"跳到银河系（zoomOutTo）。
+  // 这正是用户说的"有个范围边界"——镜头到顶后再继续缩小即视为"退出本系统"。
+  const zoomOutUrl = system.parentSystem?.url ?? system.zoomOutTo?.url;
+  if (zoomOutUrl) {
     window.addEventListener('wheel', (e) => {
       if (e.target && e.target.closest && e.target.closest('#bodyNav')) return;
       const d = camera.position.distanceTo(controls.target);
       if (d >= controls.maxDistance * 0.985 && e.deltaY > 0) {
-        window.location.href = system.parentSystem.url;
+        window.location.href = zoomOutUrl;
       }
     }, { passive: true });
   }
