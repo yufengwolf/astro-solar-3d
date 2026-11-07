@@ -18,6 +18,7 @@ import { mk } from './mk.js';
  * 而 ε 环位于 5.1 万 km（2.0 倍天王星半径），画出来会全部埋进环贴图里。
  */
 export default {
+  parentSystem: { label: '太阳系', url: 'overview.html' },
   id: 'uranus',
   label: '天王星系统',
   hasSun: false,

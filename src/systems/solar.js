@@ -121,6 +121,7 @@ export default {
       },
     }),
     mk('earth', '地球', {
+      childSystem: 'earth-moon.html',
       texture: earthMaterial, atmosphere: earthAtmosphere,
       atmosphereRotateHours: 25.5, // 略慢于地表自转，云层缓慢漂移
       orbit: { opacity: 0.10, color: 0xa8d8ff },
@@ -131,6 +132,7 @@ export default {
       },
     }),
     mk('mars', '火星', {
+      childSystem: 'mars.html',
       texture: marsTexture, bump: marsBump,
       orbit: { opacity: 0.10, color: 0xff9b7a },
       info: {
@@ -150,6 +152,7 @@ export default {
       },
     }),
     mk('jupiter', '木星', {
+      childSystem: 'jupiter.html',
       texture: jupiterTexture,
       orbit: { opacity: 0.10, color: 0xffd8b0 },
       info: {
@@ -159,6 +162,7 @@ export default {
       },
     }),
     mk('saturn', '土星', {
+      childSystem: 'saturn.html',
       texture: saturnTexture,
       ring: { texture: saturnRing, innerScale: 1.24, outerScale: 2.27 },
       orbit: { opacity: 0.10, color: 0xffe9b8 },
@@ -169,6 +173,7 @@ export default {
       },
     }),
     mk('uranus', '天王星', {
+      childSystem: 'uranus.html',
       texture: uranusTexture,
       ring: { texture: uranusRing, innerScale: 1.6, outerScale: 2.0 },
       orbit: { opacity: 0.10, color: 0xb8f0ff },
@@ -179,6 +184,7 @@ export default {
       },
     }),
     mk('neptune', '海王星', {
+      childSystem: 'neptune.html',
       texture: neptuneTexture,
       orbit: { opacity: 0.10, color: 0x9fc8ff },
       info: {
@@ -188,6 +194,7 @@ export default {
       },
     }),
     mk('pluto', '冥王星', {
+      childSystem: 'pluto.html',
       texture: plutoTexture,
       orbit: { opacity: 0.10, color: 0xd8c8ff },
       info: {

@@ -25,6 +25,7 @@ import { mk } from './mk.js';
  *  - views 提供三档取景：主卫星（到土卫六）／到土卫八／全含逆行的土卫九。
  */
 export default {
+  parentSystem: { label: '太阳系', url: 'overview.html' },
   id: 'saturn',
   label: '土星系统',
   hasSun: false,

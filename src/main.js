@@ -324,6 +324,101 @@ export function start(system) {
 
   const infoById = new Map();
   for (const def of system.bodies) infoById.set(def.id, def);
+  // 太阳不在 system.bodies 里（单独建的 sunMesh），但也要纳入"可点选/可聚焦"清单
+  if (system.hasSun) {
+    infoById.set('sun', { id: 'sun', name: '太阳', size: system.scale?.sunUnits ?? 18 });
+  }
+
+  // 矮行星 id 集合：用于左侧菜单的类型着色（避免逐个解析 info 文本）
+  const DWARF = new Set(['ceres', 'pluto', 'haumea', 'makemake', 'eris']);
+  function bodyType(b) {
+    if (b.comet) return 'comet';
+    if (b.parent) return 'moon';
+    if (DWARF.has(b.id)) return 'dwarf';
+    return 'planet';
+  }
+
+  // 取某天体的聚焦目标对象（mesh / glb 模型 / 彗发 / 太阳）
+  function focusObjectOf(id) {
+    if (system.hasSun && id === 'sun') return sunMesh;
+    const n = byId.get(id);
+    if (!n) return null;
+    return n.mesh || n.model || (n.comet && n.comet.coma) || null;
+  }
+
+  // 左侧菜单选中高亮
+  const navRows = new Map();
+  function highlightNav(id) {
+    for (const [rid, row] of navRows) row.classList.toggle('active', rid === id);
+  }
+
+  // 选中并飞向某个天体（菜单点击 / 3D 拾取共用）
+  function selectBody(id) {
+    const def = infoById.get(id);
+    const obj = focusObjectOf(id);
+    if (!def || !obj) return;
+    selected = def;
+    focusOn(def, obj);
+    highlightNav(id);
+  }
+
+  // 构建左侧天体快捷菜单：列出当前系统所有天体，点击即切到对应视角
+  function buildBodyNav() {
+    const nav = document.createElement('div');
+    nav.id = 'bodyNav';
+    nav.className = 'body-nav';
+
+    const head = document.createElement('div');
+    head.className = 'bn-head';
+    const title = document.createElement('div');
+    title.className = 'bn-title';
+    title.textContent = system.label ?? system.id;
+    head.appendChild(title);
+    // 卫星系统页：左上角常驻"返回上级系统"按钮
+    if (system.parentSystem) {
+      const back = document.createElement('a');
+      back.className = 'bn-back';
+      back.href = system.parentSystem.url;
+      back.textContent = '← ' + system.parentSystem.label;
+      head.appendChild(back);
+    }
+    nav.appendChild(head);
+
+    const list = document.createElement('div');
+    list.className = 'bn-list';
+    const entries = [];
+    if (system.hasSun) entries.push({ id: 'sun', name: '太阳', type: 'sun' });
+    for (const b of system.bodies) entries.push({ id: b.id, name: b.name, type: bodyType(b), def: b });
+
+    for (const e of entries) {
+      const row = document.createElement('div');
+      row.className = 'bn-item type-' + e.type;
+      const dot = document.createElement('span');
+      dot.className = 'bn-dot';
+      const name = document.createElement('span');
+      name.className = 'bn-name';
+      name.textContent = e.name;
+      row.appendChild(dot);
+      row.appendChild(name);
+      row.onclick = () => selectBody(e.id);
+      // 有卫星系统的行星：行内"卫星系"标签直达下钻
+      if (e.def && e.def.childSystem) {
+        const go = document.createElement('span');
+        go.className = 'bn-go';
+        go.textContent = '卫星系';
+        go.title = '进入卫星系统';
+        go.onclick = (ev) => {
+          ev.stopPropagation();
+          window.location.href = e.def.childSystem;
+        };
+        row.appendChild(go);
+      }
+      list.appendChild(row);
+      navRows.set(e.id, row);
+    }
+    nav.appendChild(list);
+    document.body.appendChild(nav);
+  }
 
   let selected = null;
   let isMoving = false;
@@ -365,6 +460,16 @@ export function start(system) {
       detail += `\n视觉放大: ×${settings.bodyExaggeration}（天体尺寸已放大，轨道比例不变）`;
     }
     detailEl.innerText = detail;
+    // 有卫星系统的天体：信息卡里给出"进入卫星系统"按钮，点行星即可下钻
+    const oldBtn = box.querySelector('.child-btn');
+    if (oldBtn) oldBtn.remove();
+    if (def.childSystem) {
+      const btn = document.createElement('button');
+      btn.className = 'child-btn';
+      btn.textContent = '进入' + def.name + '卫星系统 →';
+      btn.onclick = () => { window.location.href = def.childSystem; };
+      box.querySelector('.planet-info-content').appendChild(btn);
+    }
     box.style.display = 'block';
   }
   function closeInfo() {
@@ -402,16 +507,16 @@ export function start(system) {
   });
 
   window.addEventListener('mousedown', (e) => {
+    // 点在左侧菜单 / 信息卡上时不要触发 3D 拾取，否则会误聚焦
+    if (e.target && e.target.closest && e.target.closest('#bodyNav, #planetInfo')) return;
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObjects(raycastTargets, false);
     if (!hits.length) return;
     const id = hits[0].object.userData.bodyId;
-    const def = infoById.get(id) ?? (id === 'sun' ? { name: '太阳', size: system.scale?.sunUnits ?? 18 } : null);
-    if (!def) return;
-    selected = def;
-    focusOn(def, hits[0].object);
+    if (!id) return;
+    selectBody(id);
   });
 
   // ---------- 动画：真实时间驱动的开普勒运动 ----------
@@ -495,6 +600,21 @@ export function start(system) {
     requestAnimationFrame(animate);
     composer.render();
   }
+  // ---------- 左侧天体快捷菜单（注入式，所有系统页共用）----------
+  buildBodyNav();
+
+  // ---------- 缩小触发返回：卫星系统页拉到最外圈再往外滚，自动回上级系统 ----------
+  // 这就是用户说的"有个范围边界"——镜头到顶后再继续缩小即视为"退出本系统"。
+  if (system.parentSystem) {
+    window.addEventListener('wheel', (e) => {
+      if (e.target && e.target.closest && e.target.closest('#bodyNav')) return;
+      const d = camera.position.distanceTo(controls.target);
+      if (d >= controls.maxDistance * 0.985 && e.deltaY > 0) {
+        window.location.href = system.parentSystem.url;
+      }
+    }, { passive: true });
+  }
+
   animate();
 
   window.addEventListener('resize', () => {
