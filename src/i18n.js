@@ -52,6 +52,7 @@ const UI = {
     infoZoom: (n) => `视觉放大: ×${n}（天体尺寸已放大，轨道比例不变）`,
     back: (s) => `← ${s}`,
     childGo: '卫星系',
+    childGoShort: '进入',
     childTitle: (s) => `进入${s}`,
     childBtn: (s) => `进入${s} →`,
     nameSun: '太阳',
@@ -60,6 +61,30 @@ const UI = {
     tierTitle: (label) => `切到${label}视野`,
     unitLy: '光年',
     unitKpc: '千秒差距',
+    morphLabel: '形态',
+    viewLabel: '视野',
+    // 宇宙层级导航
+    navRoot: '宇宙遨游',
+    navHome: '星图首页',
+    navMap: '宇宙地图',
+    navMapTitle: '打开宇宙层级地图',
+    navUp: '上一级',
+    navDown: '下一级',
+    navDownList: '选择下一级',
+    navAtRoot: '已在最外层',
+    navNoChild: '已是最小尺度',
+    navCurrent: '当前位置',
+    navHint: '点任一层级直达 · 滚轮向外也能上浮',
+    navClose: '关闭',
+    mapTitle: '宇宙层级地图',
+    mapDesc: '从可观测宇宙一路到行星卫星系统，点任意节点直接前往',
+    mapHere: '你在这里',
+    mapLegendFull: '完整三维页',
+    mapLegendGeneric: '层级总览页',
+    mapLegendPlanned: '通用视图 · 待细化',
+    ladderTitle: '从宇宙到卫星系统',
+    ladderDesc: '沿这条链任意上下遨游，每一层都能直达',
+    levelSuffix: '尺度',
   },
   en: {
     langButton: 'Chinese',
@@ -74,6 +99,7 @@ const UI = {
     infoZoom: (n) => `Visual size: ×${n} (bodies only; orbit scale unchanged)`,
     back: (s) => `← ${s}`,
     childGo: 'Moons',
+    childGoShort: 'Enter',
     childTitle: (s) => `Enter ${s}`,
     childBtn: (s) => `Enter ${s} →`,
     nameSun: 'Sun',
@@ -82,6 +108,30 @@ const UI = {
     tierTitle: (label) => `View: ${label}`,
     unitLy: 'ly',
     unitKpc: 'kpc',
+    morphLabel: 'Morphology',
+    viewLabel: 'Field of view',
+    // Cosmic hierarchy navigation
+    navRoot: 'Cosmic Atlas',
+    navHome: 'Atlas home',
+    navMap: 'Cosmic map',
+    navMapTitle: 'Open the cosmic hierarchy map',
+    navUp: 'Up one level',
+    navDown: 'Down one level',
+    navDownList: 'Choose a child level',
+    navAtRoot: 'Outermost level',
+    navNoChild: 'Smallest scale',
+    navCurrent: 'You are here',
+    navHint: 'Click any level to jump · scroll out to rise one level',
+    navClose: 'Close',
+    mapTitle: 'Cosmic hierarchy map',
+    mapDesc: 'From the observable universe down to moon systems — click any node to travel',
+    mapHere: 'You are here',
+    mapLegendFull: 'Full 3D page',
+    mapLegendGeneric: 'Level overview',
+    mapLegendPlanned: 'Generic view · to be detailed',
+    ladderTitle: 'From the universe to moon systems',
+    ladderDesc: 'Travel freely up and down this chain; every level is one click away',
+    levelSuffix: 'scale',
   },
 };
 
@@ -98,11 +148,13 @@ export function distText(dLy) {
 
 export function tierLabel(tier) {
   if (!isEn()) return tier.label;
-  return tier.spanLy.toLocaleString('en-US') + ' ly';
+  // 上级层级页的档位（亿光年 / 百万光年…）自带更合适的英文简写
+  return tier.labelEn ?? (tier.spanLy.toLocaleString('en-US') + ' ly');
 }
 
 export function tierShort(tier) {
   if (!isEn()) return tier.short;
+  if (tier.shortEn) return tier.shortEn;
   const n = tier.spanLy;
   return n >= 1000 ? `${n / 1000}k ly` : `${n} ly`;
 }
@@ -120,6 +172,7 @@ const GROUP_EN = {
   '致密天体': 'Compact Objects', '球状星团': 'Globular Clusters',
   '邻近恒星': 'Nearby Stars', '疏散星团': 'Open Clusters',
   '系外行星系统': 'Exoplanet Systems',
+  '下级层级': 'Child levels', '上级层级': 'Parent level', '同级层级': 'Sibling levels',
 };
 const VIEW_EN = {
   '内卫星': 'Inner moons', '伽利略卫星': 'Galilean moons',
@@ -139,7 +192,8 @@ const INFO_KEY_EN = {
   '轨道半长轴': 'Semi-major axis', '偏心率': 'Eccentricity', '轨道倾角': 'Inclination',
   '公转周期': 'Orbital period', '自转周期': 'Rotation period', '质量': 'Mass',
   '位置': 'Position', '视星等': 'Apparent magnitude', '光谱型': 'Spectral type',
-  '发现': 'Discovered', '备注': 'Notes', '卫星数': 'Moons',
+  '发现': 'Discovered', '备注': 'Notes', '卫星数': 'Moons', '尺度': 'Scale',
+  '形态': 'Morphology',
 };
 
 export const systemName = (s) => (isEn() ? (SYSTEM_EN[s] ?? s) : s);
@@ -200,7 +254,8 @@ const NAME_EN = {
 
 export function bodyName(def) {
   if (!isEn()) return def.name;
-  return NAME_EN[def.id] ?? def.name.replace(/（[^）]*）/g, '').trim();
+  // 注册表驱动的通用层级页自带英文名；旧系统继续走静态映射表
+  return def.nameEn ?? NAME_EN[def.id] ?? def.name.replace(/（[^）]*）/g, '').trim();
 }
 /** 标签里省略括号后缀，菜单保留全名 */
 export const shortName = (name) => name.replace(/（[^）]*）/g, '').trim();
@@ -208,15 +263,15 @@ export const shortName = (name) => name.replace(/（[^）]*）/g, '').trim();
 // ---------- 首页静态文案 ----------
 const HOME = {
   zh: {
-    title: '太阳系 3D 交互可视化',
-    h1: '太阳系 · 银河系 3D 交互可视化',
-    desc: '从行星系统一路放大到银河系。基于 JPL / PDS 真实轨道参数构建，可逐级下钻：太阳系总览 → 行星卫星系统 →（缩到最外圈再往外滚）银河系。每个页面都支持「视觉放大 ×N」、多取景视角切换与全屏。轨道比例真实，天体尺寸可按需放大。',
+    title: '宇宙遨游 · 3D 交互可视化',
+    h1: '太阳系 · 银河系 · 宇宙 3D 交互可视化',
+    desc: '从可观测宇宙一路下钻到行星卫星系统，也能从任意一层向上浮回去，层级之间完全互通。太阳系与 7 个卫星系统按 JPL / PDS 真实轨道参数构建，大尺度结构为定性示意。每页顶部都有层级导航与宇宙地图，支持「视觉放大 ×N」、多取景视角与全屏。',
     footer1: '所有页面：轨道比例真实 · 天体尺寸可「视觉放大 ×N」· 多取景视角 · 支持全屏（移动端自动横屏）',
     footer2: '基于 Three.js · 数据取自 JPL / PDS · MIT 许可',
     go: '进入 →',
     cards: [
       ['恒星与行星', '太阳系总览', '太阳 + 八大行星 + 小行星带 / 柯伊伯带。行星半径与轨道距离经幂律压缩，便于同屏观察（想看近真实比例请进各子系统）。'],
-      ['旋臂与星云', '银河系', '放大一级：太阳只是约 2000 亿颗恒星中普通的一颗。旋臂为定性示意；点「太阳」可下钻回太阳系，在太阳系总览缩到最外圈再往外滚则回到这里。'],
+      ['旋臂与星云', '银河系', '我们的家园星系，太阳只是约 2000 亿颗恒星中普通的一颗。旋臂为定性示意；点「太阳」下钻太阳系，向上可回到本星系群、室女座超星系团直到宇宙。'],
       ['潮汐锁定', '地月系统', '地球位于原点只自转，月球公转 + 自转并始终以同一面朝向地球（潮汐锁定）。'],
       ['两颗小卫星', '火星系统', '火星 + 火卫一 / 火卫二（三维模型）。轨道完全按真实比例呈现，卫星本体放大以便观察。'],
       ['伽利略四卫', '木星系统', '17 颗卫星：内卫星、伽利略四卫（木卫一至木卫四）、以及远距不规则逆行卫星。提供 4 档取景预设。'],
@@ -227,15 +282,15 @@ const HOME = {
     ],
   },
   en: {
-    title: 'Solar System 3D Visualization',
-    h1: 'Solar System · Milky Way in 3D',
-    desc: 'Zoom out from planetary systems to the galaxy. Built on real JPL / PDS orbital elements, with step-by-step navigation: Solar System → moon systems → (scroll past the outer limit) Milky Way. Every page supports visual size boost, preset views and fullscreen. Orbit scale is true to data; body sizes can be enlarged for visibility.',
+    title: 'Cosmic Atlas · 3D Visualization',
+    h1: 'Solar System · Milky Way · Universe in 3D',
+    desc: 'Travel from the observable universe down to moon systems — and back up from any level. Every page has a hierarchy breadcrumb and a cosmic map. The Solar System and seven moon systems use real JPL / PDS orbital elements; large-scale structure is qualitative. Visual size boost, preset views and fullscreen are available throughout.',
     footer1: 'All pages: true orbit scale · adjustable visual size · preset views · fullscreen (auto landscape on mobile)',
     footer2: 'Built with Three.js · data from JPL / PDS · MIT license',
     go: 'Enter →',
     cards: [
       ['Solar System', 'Solar System Overview', 'Sun + eight planets + asteroid / Kuiper belts. Radii and orbit distances use a power-law compression so everything fits on one screen (open a moon system for near-true proportions).'],
-      ['Milky Way', 'Milky Way', 'One level out: the Sun is just one of ~200 billion stars. Spiral arms are qualitative. Click the Sun to dive back, or zoom out past the outer limit on the overview page.'],
+      ['Spiral arms', 'Milky Way', 'Our home galaxy: the Sun is just one of ~200 billion stars. Spiral arms are qualitative. Click the Sun to dive into the Solar System, or rise to the Local Group, Virgo Supercluster and beyond.'],
       ['Earth · Moon', 'Earth–Moon System', 'Earth sits at the origin and only spins; the Moon orbits, spins, and always shows the same face (tidal locking).'],
       ['Mars', 'Mars System', 'Mars + Phobos / Deimos (GLB models). Orbits at true relative scale; moon bodies are enlarged to stay visible.'],
       ['Jupiter', 'Jupiter System', '17 moons: inner group, the four Galilean moons, and distant retrograde irregulars. Four preset views.'],
@@ -305,7 +360,12 @@ function mountLangToggle() {
   document.body.appendChild(btn);
 }
 
-if (typeof document !== 'undefined') {
+// Node 自检脚本会放一个极简 document 桩来 import 太阳系配置；
+// 必须确认这是完整的浏览器文档，否则 applyStaticI18n 会在桩上崩溃。
+const hasRealDOM = typeof document !== 'undefined'
+  && !!document.documentElement
+  && typeof document.addEventListener === 'function';
+if (hasRealDOM) {
   const boot = () => { applyStaticI18n(); mountLangToggle(); };
   if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', boot);

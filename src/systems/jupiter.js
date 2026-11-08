@@ -23,7 +23,7 @@ import { mk } from './mk.js';
  * 不压缩就不到 1 像素；minBodyUnits 给一个下限，保证点击/缩放后至少看得见。
  */
 export default {
-  parentSystem: { label: '太阳系', url: 'overview.html' },
+  // 上级系统由 src/universe.js 的层级注册表统一提供
   id: 'jupiter',
   label: '木星系统',
   hasSun: false,

@@ -1,0 +1,220 @@
+/**
+ * 通用「大尺度结构」背景点云 —— 只画结构，不画天体。
+ *
+ * 上一版给每个可点击成员撒 900 个点，形成一颗白色「绒球」：
+ *   · 本星系群页里银河系、仙女座、三角座、大小麦哲伦云长得一模一样，
+ *     而且每个都被画成横跨几万光年的大球；
+ *   · 可观测宇宙 / 拉尼亚凯亚 / 室女座页的每个结点也是同一颗绒球。
+ * 在 1000 万光年乃至 930 亿光年的视野里，一个星系本来就只是像素级的
+ * 一个点，把它画成球是数量级错误，也完全体现不出宇宙的空旷。
+ *
+ * 现在成员本体交给 main.js 的 star mesh + halo：按真实直径给不同的
+ * 颜色、亮度与大小，一律是点；身份由名字标签、左侧菜单和信息卡用文字点出。
+ * 这里只负责「宇宙网纤维 / 空洞 / 稀薄场星系」这类**结构**：
+ *   · 宇宙 / 超星系团层：保留纤维网，结点只是纤维汇聚处一小撮暗点，
+ *     密度、范围、颜色按成员自身数据变化，不再有统一的白球；
+ *   · 星系群 / 星系团 / 单个星系层：星系之间本来就是近乎全黑的空间，
+ *     只留极稀疏的暗场星系点与寥寥几颗更暗的伴星系。
+ *
+ * 纯程序化，无外部贴图 / 数据文件，静态部署与离线都能用。
+ */
+import * as THREE from 'three';
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function randn(rng) {
+  let u = 0, v = 0;
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+let _discTex = null;
+function discTexture() {
+  if (_discTex) return _discTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.3, 'rgba(255,255,255,0.8)');
+  grd.addColorStop(0.65, 'rgba(255,255,255,0.16)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  _discTex = new THREE.CanvasTexture(c);
+  return _discTex;
+}
+
+// 每类的调色板：[纤维冷色, 弥散背景色]，线性 RGB 三元组。
+// 结点不再用统一暖白，而是取成员自己的 color。
+const PALETTE = {
+  universe: [[0.28, 0.48, 1.00], [0.30, 0.31, 0.56]],
+  supercluster: [[0.34, 0.60, 1.00], [0.32, 0.33, 0.58]],
+  cluster: [[0.50, 0.66, 1.00], [0.34, 0.38, 0.60]],
+  group: [[0.54, 0.70, 1.00], [0.32, 0.36, 0.56]],
+  galaxy: [[0.46, 0.64, 1.00], [0.34, 0.34, 0.56]],
+  void: [[0.40, 0.54, 0.86], [0.26, 0.30, 0.48]],
+};
+
+/** 锚点兼容两种写法：坐标数组，或 { pos, color, weight } */
+function normAnchor(a) {
+  if (Array.isArray(a)) return { pos: a, rgb: [0.82, 0.86, 1], weight: 0.5 };
+  const hex = a.color ?? 0xffffff;
+  return {
+    pos: a.pos ?? [0, 0, 0],
+    rgb: [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255],
+    weight: Math.max(0, Math.min(1, a.weight ?? 0.5)),
+  };
+}
+
+/**
+ * @param {object} cfg
+ * @param {string} cfg.kind        universe | supercluster | cluster | group | galaxy
+ * @param {number} cfg.seed        随机种子，保证每一层画面稳定可复现
+ * @param {Array}  cfg.anchors     可点击成员：坐标数组或 { pos, color, weight }
+ * @param {number} cfg.pointSize   全景档点大小（场景单位）
+ * @param {number} cfg.radius      背景点云的整体半径
+ */
+export function buildCosmosField(cfg) {
+  const kind = cfg.kind ?? 'group';
+  const rng = mulberry32(cfg.seed ?? 1);
+  const anchors = (cfg.anchors ?? []).map(normAnchor)
+    .filter((a) => Array.isArray(a.pos) && a.pos.length >= 3);
+  const radius = cfg.radius ?? 15;
+  const [filamentCol, hazeCol] = PALETTE[kind] ?? PALETTE.group;
+  // 不同上层结构用不同生成规则：宇宙是网、超星系团是引力流域、
+  // 星系团是中心密集 + 外围链、星系群/星系页是近乎空的场。
+  // 以前所有上层页共用同一张两两互联的纤维网，才会「长得一样」。
+  const shape = cfg.shape ?? (kind === 'universe' || kind === 'supercluster' ? 'web' : 'void');
+  const isWeb = shape !== 'void';
+
+  const pos = [];
+  const col = [];
+  const push = (x, y, z, c, bright) => {
+    pos.push(x, y, z);
+    col.push(
+      Math.min(1, c[0] * bright),
+      Math.min(1, c[1] * bright),
+      Math.min(1, c[2] * bright),
+    );
+  };
+  // 一小撮暗点：立方根分布让中心略密，外缘迅速散开
+  const clump = (centre, n, spread, c, bright) => {
+    for (let i = 0; i < n; i++) {
+      const r = Math.cbrt(rng()) * spread;
+      const u = rng() * 2 - 1;
+      const phi = rng() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      push(
+        centre[0] + r * s * Math.cos(phi),
+        centre[1] + r * u * 0.55,
+        centre[2] + r * s * Math.sin(phi),
+        c, bright * (0.55 + rng() * 0.75),
+      );
+    }
+  };
+  // 纤维：两点之间一条略弯的二次曲线，沿线撒点并给横向散射
+  const filament = (a, b, n, width, c, bright) => {
+    const mx = (a[0] + b[0]) / 2 + randn(rng) * radius * 0.12;
+    const my = (a[1] + b[1]) / 2 + randn(rng) * radius * 0.06;
+    const mz = (a[2] + b[2]) / 2 + randn(rng) * radius * 0.12;
+    for (let i = 0; i < n; i++) {
+      const t = rng();
+      const q = 1 - t;
+      push(
+        q * q * a[0] + 2 * q * t * mx + t * t * b[0] + randn(rng) * width,
+        q * q * a[1] + 2 * q * t * my + t * t * b[1] + randn(rng) * width * 0.5,
+        q * q * a[2] + 2 * q * t * mz + t * t * b[2] + randn(rng) * width,
+        c, bright * (0.35 + rng() * 0.7),
+      );
+    }
+  };
+
+  if (shape === 'web') {
+    // 宇宙网：纤维是唯一的主角。结点只表现为「纤维在这里汇聚得略密」，
+    // 不再是 900 点的大白球；密度 / 范围 / 颜色随成员真实尺度变化。
+    const linkCount = kind === 'universe' ? 2100 : 1600;
+    const n = Math.max(2, anchors.length);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        filament(anchors[i].pos, anchors[j].pos,
+          Math.round(linkCount / ((n * (n - 1)) / 2)), 0.55, filamentCol, 0.55);
+      }
+      // 向外缘伸出短纤维，避免整张图只在中间打转
+      const ang = (i / n) * Math.PI * 2 + rng() * 0.6;
+      const far = [Math.cos(ang) * radius, randn(rng) * 1.2, Math.sin(ang) * radius];
+      filament(anchors[i].pos, far, Math.round(linkCount / (n * 2)), 0.75, filamentCol, 0.38);
+    }
+    for (const a of anchors) {
+      clump(a.pos, 48 + Math.round(a.weight * 130), 0.45 + a.weight * 0.65, a.rgb, 0.30);
+    }
+    clump([0, 0, 0], 260, 5.0, hazeCol, 0.14);
+  } else if (shape === 'flow') {
+    // 拉尼亚凯亚：星系的运动轨迹都朝「巨引源」汇聚，所以是一束束
+    // 弯向同一处的流域线，而不是各向同性的网。
+    const sink = [-2.4, 0.4, 3.6];
+    for (const a of anchors) {
+      for (let k = 0; k < 3; k++) {
+        const via = [
+          (a.pos[0] + sink[0]) / 2 + randn(rng) * 2.0,
+          (a.pos[1] + sink[1]) / 2 + randn(rng) * 0.7,
+          (a.pos[2] + sink[2]) / 2 + randn(rng) * 2.0,
+        ];
+        filament(a.pos, via, 130, 0.42, filamentCol, 0.42);
+        filament(via, sink, 190, 0.36, filamentCol, 0.55);
+      }
+      clump(a.pos, 44 + Math.round(a.weight * 90), 0.5 + a.weight * 0.6, a.rgb, 0.28);
+    }
+    clump(sink, 420, 2.6, hazeCol, 0.16);
+  } else if (shape === 'cluster') {
+    // 星系团：一个致密的中央团，外围成员由星系链连到中心，越外越稀。
+    clump([0, 0, 0], 900, 2.4, hazeCol, 0.20);
+    for (const a of anchors) {
+      filament([0, 0, 0], a.pos, 260, 0.50, filamentCol, 0.46);
+      clump(a.pos, 36 + Math.round(a.weight * 80), 0.6 + a.weight * 0.7, a.rgb, 0.26);
+    }
+    for (let i = 0; i < 6; i++) {
+      const ang = rng() * Math.PI * 2;
+      filament([0, 0, 0], [Math.cos(ang) * radius, randn(rng) * 1.2, Math.sin(ang) * radius],
+        150, 0.7, filamentCol, 0.30);
+    }
+  } else {
+    // 星系群 / 单个星系：不画纤维，更不画盘。
+    // 每个成员周围只留十几颗更暗的伴星系，暗示「星系成群」而不是「星系是个球」。
+    for (const a of anchors) {
+      clump(a.pos, 12 + Math.round(a.weight * 22), 1.6, a.rgb, 0.16);
+    }
+  }
+
+  // 极稀疏的场星系，给空洞一点深度：亮度低到只有在黑底上才隐约可见
+  const fieldN = shape === 'void' ? 150 : (shape === 'cluster' ? 380 : 460);
+  for (let i = 0; i < fieldN; i++) {
+    const r = Math.pow(rng(), 0.6) * radius * 1.15;
+    const ang = rng() * Math.PI * 2;
+    push(
+      Math.cos(ang) * r, randn(rng) * radius * 0.12, Math.sin(ang) * r,
+      hazeCol, 0.05 + rng() * 0.14,
+    );
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return new THREE.Points(geo, new THREE.PointsMaterial({
+    size: cfg.pointSize ?? 0.16,
+    map: discTexture(),
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+    toneMapped: false,
+  }));
+}

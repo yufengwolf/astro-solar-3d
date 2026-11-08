@@ -35,7 +35,9 @@ rmSync(TMP, { recursive: true, force: true });
 mkdirSync(TMP, { recursive: true });
 writeFileSync(resolve(TMP, 'mk.js'), readFileSync(resolve(SRC, 'systems', 'mk.js'), 'utf8'));
 for (const f of readdirSync(resolve(SRC, 'systems'))) {
-  if (!f.endsWith('.js') || f === 'mk.js' || f === 'shared.js') continue;
+  // cosmos.js 是运行时页面工厂（导出 makeCosmosSystem，不是默认 system 配置），
+  // 它的尺度由 universe.js 注册表计算，不属于这里的「静态系统配置」校验对象。
+  if (!f.endsWith('.js') || f === 'mk.js' || f === 'shared.js' || f === 'cosmos.js') continue;
   writeFileSync(resolve(TMP, f), toNodeModule(readFileSync(resolve(SRC, 'systems', f), 'utf8')));
 }
 

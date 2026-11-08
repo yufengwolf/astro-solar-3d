@@ -1,3 +1,6 @@
+/* 3D 页的 canvas 按 innerWidth/innerHeight 铺满，默认 8px margin 会挤出滚动条 */
+body { margin: 0; }
+
 .planet-info {
     display: none;
     position: fixed;
@@ -141,7 +144,7 @@ p {
     position: fixed;
     left: 8px;
     top: 8px;
-    width: 212px;
+    width: 232px;
     max-height: calc(100vh - 24px);
     display: flex;
     flex-direction: column;
@@ -163,6 +166,15 @@ p {
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 .bn-title { font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
+.bn-caption {
+    padding: 8px 12px 9px;
+    font-size: 11px;
+    line-height: 1.65;
+    white-space: pre-line;
+    color: #a9bcd8;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(20, 34, 58, 0.35);
+}
 .bn-back {
     font-size: 12px;
     color: #7fe3e0;
@@ -218,14 +230,22 @@ p {
     border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 .bn-group:first-child { border-top: none; margin-top: 0; }
-.bn-name { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 长星系名（如「长蛇－半人马超星系团」、英文 M31/M33 全名）换行显示，
+   不再用省略号吞掉名字；只有放不下时才真的折行，短名字布局不变。 */
+.bn-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 15px;
+}
 .bn-go {
     flex: 0 0 auto;
-    font-size: 11px;
+    font-size: 10px;
     color: #ffd76b;
     border: 1px solid rgba(255, 215, 107, 0.45);
     border-radius: 5px;
-    padding: 1px 6px;
+    padding: 1px 5px;
     cursor: pointer;
 }
 .bn-go:hover { background: rgba(255, 215, 107, 0.16); }
@@ -373,6 +393,31 @@ p {
     background: rgba(9, 26, 36, 0.82);
     text-shadow: 0 1px 2px #000, 0 0 8px #7fe3e0;
 }
+/* 宇宙层级页的两行名字标签：第一行名字，第二行「类型 · 真实直径」。
+   在这些尺度上成员本来只是 1~4px 的点，身份靠文字点出，不靠假想的外形。 */
+.bl-text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    line-height: 14px;
+}
+.bl-name { line-height: 14px; }
+.bl-note {
+    font-size: 9px;
+    line-height: 11px;
+    letter-spacing: 0;
+    opacity: 0.72;
+}
+.bl-item.with-note {
+    height: auto;
+    min-height: 30px;
+    padding: 2px 8px 2px 6px;
+    align-items: center;
+}
+.bl-item.with-note::before { top: 14px; }
+/* 每个成员用自己在注册表里的 accent 着色，避免所有星系一个颜色 */
+.bl-item.with-note { color: var(--bl-color, #d7e4ff); }
+.bl-item.with-note.active { color: var(--bl-color, #ffffff); }
 @media (max-width: 620px) {
     .bl-item { font-size: 10px; }
 }
@@ -380,10 +425,13 @@ p {
 /* ===== 界面语言切换 ===== */
 .lang-toggle {
     position: fixed;
-    /* 左侧菜单宽 212 + 8，贴在菜单右上方，避开左下角标与右下信息卡 */
-    left: 228px;
-    top: 8px;
-    z-index: 14;
+    /* 让出顶部整行给宇宙导航条，语言按钮贴在它右端 */
+    right: 8px;
+    left: auto;
+    top: 6px;
+    height: 34px;
+    box-sizing: border-box;
+    z-index: 16;
     padding: 5px 12px;
     border: 1px solid rgba(140, 190, 255, 0.38);
     border-radius: 8px;
@@ -401,7 +449,7 @@ p {
 html:lang(zh-CN) .scale-bar { min-width: 500px; }
 @media (max-width: 620px) {
     html:lang(zh-CN) .scale-bar { min-width: 0; }
-    .lang-toggle { left: 224px; top: 8px; padding: 4px 8px; font-size: 11px; }
+    .lang-toggle { right: 8px; left: auto; top: 44px; height: 28px; padding: 3px 8px; font-size: 11px; }
 }
 
 /* dat.GUI 自带 "Close Controls / Open Controls"：用伪元素换成本地化文案 */
@@ -413,3 +461,219 @@ html:lang(zh-CN) .scale-bar { min-width: 500px; }
 #gui-container .dg.main.closed .close-button.localized::after { content: '展开控制面板'; }
 html:lang(en) #gui-container .close-button.localized::after { content: 'Close Controls'; }
 html:lang(en) #gui-container .dg.main.closed .close-button.localized::after { content: 'Open Controls'; }
+
+/* ===================================================================
+   宇宙层级导航：顶部面包屑 + 上下级 + 宇宙地图 + 首页层级路线图
+   顶部独占一整行，因此把左侧菜单与右上角控制面板统一下移。
+   =================================================================== */
+.universe-nav {
+    position: fixed;
+    top: 6px;
+    left: 8px;
+    right: 96px;
+    height: 34px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    z-index: 15;
+    background: rgba(6, 10, 22, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(6px);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+.un-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.un-crumbs::-webkit-scrollbar { display: none; }
+.un-crumb {
+    flex: 0 0 auto;
+    font-size: 12px;
+    line-height: 20px;
+    color: #a9bde0;
+    text-decoration: none;
+    white-space: nowrap;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+.un-crumb:hover { background: rgba(255, 255, 255, 0.09); color: #fff; }
+.un-crumb.un-home { color: #7fe3e0; }
+.un-crumb.current {
+    color: #ffd76b;
+    font-weight: 700;
+    background: rgba(255, 215, 107, 0.13);
+    cursor: default;
+}
+.un-sep { color: #5f7090; font-size: 13px; flex: 0 0 auto; }
+.un-actions { position: relative; display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+.un-btn {
+    padding: 4px 9px;
+    font-size: 11px;
+    line-height: 18px;
+    color: #cfe4ff;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(140, 190, 255, 0.28);
+    border-radius: 7px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: inherit;
+}
+.un-btn:hover:not(:disabled) { background: rgba(30, 54, 88, 0.95); color: #fff; }
+.un-btn.disabled { opacity: 0.42; cursor: default; }
+.un-dropdown {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 9px);
+    min-width: 220px;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 6px;
+    z-index: 22;
+    background: rgba(8, 14, 28, 0.97);
+    border: 1px solid rgba(140, 190, 255, 0.28);
+    border-radius: 10px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.6);
+}
+.un-dropdown.open { display: block; }
+.un-dd-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 8px;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    color: #dce8ff;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+.un-dd-item:hover { background: rgba(255, 255, 255, 0.09); }
+.un-dd-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot, #9fb0d0); flex: 0 0 auto; }
+.un-dd-name { flex: 1 1 auto; }
+.un-dd-meta { font-size: 10px; color: #7f93b8; flex: 0 0 auto; }
+
+/* 宇宙地图抽屉 */
+.universe-map {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 5, 14, 0.82);
+    backdrop-filter: blur(8px);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+.universe-map.open { display: flex; }
+.um-panel {
+    width: min(900px, 94vw);
+    max-height: 86vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 20px 22px;
+    color: #eaf0ff;
+    background: #0a1020;
+    border: 1px solid rgba(140, 180, 255, 0.22);
+    border-radius: 16px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+}
+.um-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+.um-title { margin: 0; font-size: 20px; color: #ffd76b; }
+.um-desc { margin: 6px 0 0; font-size: 13px; color: #9fb0d0; line-height: 1.6; }
+.um-close {
+    flex: 0 0 auto;
+    width: 30px; height: 30px;
+    font-size: 22px; line-height: 24px;
+    color: #cfe4ff;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    cursor: pointer;
+}
+.um-close:hover { background: rgba(255, 255, 255, 0.16); }
+.um-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 14px 0 10px; font-size: 11px; color: #8397bb; }
+.um-tree { border-top: 1px solid rgba(255, 255, 255, 0.09); padding-top: 6px; }
+.um-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px 6px calc(8px + var(--depth, 0) * 18px);
+    border-left: 2px solid transparent;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #dce8ff;
+}
+.um-row:hover { background: rgba(255, 255, 255, 0.07); }
+.um-row.here { background: rgba(127, 227, 224, 0.13); border-left-color: #7fe3e0; }
+.um-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent, #9fb0d0);
+    box-shadow: 0 0 8px var(--accent, #9fb0d0);
+    flex: 0 0 auto;
+}
+.um-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.um-name { font-size: 14px; font-weight: 600; }
+.um-here { font-size: 10px; color: #0a0e1a; background: #7fe3e0; border-radius: 4px; padding: 1px 5px; }
+.um-sub { font-size: 11px; color: #7f93b8; }
+.um-kind { font-size: 11px; color: #9fb0d0; flex: 0 0 auto; }
+.um-detail {
+    font-size: 10px; padding: 2px 7px; border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.15); color: #b7c6e2; flex: 0 0 auto;
+}
+.um-detail.detail-full { color: #ffe08a; border-color: rgba(255, 215, 107, 0.45); }
+.um-detail.detail-generic { color: #7fe3e0; border-color: rgba(127, 227, 224, 0.4); }
+.um-foot { margin-top: 12px; font-size: 11px; color: #6f82a5; }
+
+/* 首页：从宇宙到太阳系的层级路线图 */
+.home-ladder { max-width: 1120px; margin: 0 auto 34px; }
+.hl-title { font-size: 19px; margin: 0 0 6px; color: #eaf0ff; letter-spacing: 1px; }
+.hl-desc { font-size: 13px; color: #9fb0d0; margin: 0 0 16px; line-height: 1.6; }
+.hl-rail { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+.hl-step {
+    flex: 1 1 130px;
+    min-width: 118px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 12px;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-top: 3px solid var(--accent, #6cf);
+    border-radius: 12px;
+    text-decoration: none;
+    color: #eaf0ff;
+    transition: transform .18s ease, border-color .18s ease;
+}
+.hl-step:hover { transform: translateY(-3px); border-color: var(--accent, #6cf); }
+.hl-step-level { font-size: 10px; color: #8fa3c8; letter-spacing: 1px; }
+.hl-step-name { font-size: 15px; font-weight: 700; }
+.hl-step-scale { font-size: 11px; color: #9fb0d0; line-height: 1.4; }
+.hl-arrow { align-self: center; color: #5f7090; font-size: 20px; }
+
+/* 顶部导航条独占一行：左侧菜单与右上角控制面板下移让位 */
+.body-nav { top: 48px; }
+body > #gui-container { top: 48px !important; }
+
+@media (max-width: 760px) {
+    .universe-nav { right: 8px; height: 32px; padding: 0 5px; gap: 4px; }
+    .un-crumb { font-size: 11px; padding: 2px 4px; }
+    .un-btn { font-size: 10px; padding: 3px 5px; }
+    .body-nav { top: 84px; }
+    body > #gui-container { top: 84px !important; }
+    .hl-step { flex: 1 1 45%; }
+    .hl-arrow { display: none; }
+}

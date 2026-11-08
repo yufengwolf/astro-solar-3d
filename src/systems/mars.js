@@ -10,7 +10,7 @@ import { mk } from './mk.js';
  * 因此两颗卫星用 glb 模型并放大显示，但**轨道半径保持真实**。
  */
 export default {
-  parentSystem: { label: '太阳系', url: 'overview.html' },
+  // 上级系统由 src/universe.js 的层级注册表统一提供
   id: 'mars',
   label: '火星系统',
   hasSun: false,

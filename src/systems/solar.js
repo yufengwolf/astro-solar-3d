@@ -65,8 +65,7 @@ export default {
   sun: { texture: sunTexture, intensity: 1.9 },
   background: starfield,
   timeScale: 30,
-  // 缩到最外圈再往外滚 → 触发"外层空间"：跳到银河系页（LOD 边界，停止渲染太阳系细节）
-  zoomOutTo: { label: '银河系', url: 'galaxy.html' },
+  // 上下级导航（含滚轮上浮边界）统一由 src/universe.js 的层级注册表提供
   // position 只作方向用，距离由 fitCamera 按最远轨道（冥王星）自动算出
   camera: { position: [-0.83, 0.55, 0.06], target: [0, 0, 0], frameTo: 'auto' },
   // 分档视角：矮行星把外缘推到阋神星(67.86 AU)。默认停在「含阋神星」一屏看全 13 个天体，

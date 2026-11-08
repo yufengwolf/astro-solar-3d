@@ -9,6 +9,13 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createBody, solveKepler, orbitPoint, setCurrentExaggeration } from './bodies.js';
 import { applyScale, frameRadius, setBodyExaggeration } from './scale.js';
 import { createCometParts, updateComet, updateCometViewport, cometGlobals } from './comet.js';
+import { buildCosmosField } from './cosmos-field.js';
+import { buildGalaxyPortrait } from './galaxy-portrait.js';
+import {
+  resolveCurrentId, parentHref, childHref,
+  href as universeHref,
+} from './universe.js';
+import { mountUniverseNav } from './nav.js';
 import {
   t, distText, tierLabel, tierShort, systemName, groupName,
   viewName, infoKey, infoValue, bodyName, shortName,
@@ -478,6 +485,10 @@ function applyExaggerationToNodes(nodes, factor) {
  * }
  */
 export function start(system) {
+  // 当前页面在宇宙层级树里的位置。导航条、滚轮「上浮 / 下钻」边界全部从这里取，
+  // 不再依赖每个 system 各自硬编码的 parentSystem / zoomOutTo / childSystem。
+  const currentNodeId = resolveCurrentId();
+
   // 安全网：无太阳的子系统里，没有 parent 的天体就是中心天体，不该带公转轨道。
   // （REAL 里地球/木星等都存着绕日轨道，漏写 noOrbit 会让整个系统飞出画面。）
   for (const def of system.bodies) {
@@ -512,6 +523,9 @@ export function start(system) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
   document.body.appendChild(renderer.domElement);
+  // 3D 页面不需要页面级滚动（菜单 / 比例尺 / 地图抽屉都是 fixed），
+  // 关掉可避免个别平台把 canvas 溢出算成滚动条，滚轮也能全部交给相机。
+  document.body.style.overflow = 'hidden';
   // 彗尾是点云，点大小要按画布高度与 fov 换算成像素；窗口变化时必须重算
   updateCometViewport(camera, window.innerHeight);
 
@@ -595,6 +609,7 @@ export function start(system) {
   // sizeAttenuation 会把每个恒星点放大成满屏彩色圆斑。
   let galaxyField = null;
   let galaxyGlow = null;
+  let portrait = null;
   const distantGalaxyObjs = [];
   // 银河系：所有恒星点 + 锚点天体挂在一个 group 下，整体缓慢自转（聚焦时冻结）
   const galaxyGroup = system.galaxy ? new THREE.Group() : null;
@@ -623,12 +638,27 @@ export function start(system) {
     }
     // 恒星锚点：核自发光（提亮以触发 bloom）+ 加法混合光晕
     if (def.star && node.mesh) {
-      const c = new THREE.Color(def.color ?? 0xffffff).multiplyScalar(1.6);
+      const c = new THREE.Color(def.color ?? 0xffffff).multiplyScalar(def.starBoost ?? 1.6);
       node.mesh.material = new THREE.MeshBasicMaterial({ color: c });
       node.mesh.material.toneMapped = false;
       node.halo = makeStarHalo(def.color ?? 0xffffff, def.glowSize ?? (def.fixedSize ?? 1) * 6);
       node.halo.userData.bodyId = def.id;
       node.group.add(node.halo);
+      // 宇宙层级页的成员只有 1~4px，直接点几乎点不中。挂一个全透明的
+      // 拾取精灵当热区：画面上看不见，但鼠标仍能选中，点的视觉尺寸不被撑大。
+      if (def.pickSize) {
+        const pick = makeStarHalo(def.color ?? 0xffffff, def.pickSize);
+        // 关键：AdditiveBlending 在 premultipliedAlpha 下用 gl.ONE/gl.ONE，
+        // 会**忽略 opacity**，光设 opacity=0 照样画出一块纯白圆盘，再被 bloom
+        // 放大成几百像素的光斑。colorWrite=false 才真正不写颜色缓冲：
+        // 画面完全不可见、bloom 也看不到它，但对象仍在 Raycaster 的目标里。
+        pick.material.colorWrite = false;
+        pick.material.opacity = 0;
+        pick.visible = false;
+        pick.userData.bodyId = def.id;
+        node.group.add(pick);
+        node.pick = pick;
+      }
     }
     // 深空天体：挂一个默认隐藏的"放大展示物"，只有聚焦到它时才显示。
     // 银河系尺度上它仍然只是那个 0.07 的点，不会把星系画面撑满。
@@ -642,12 +672,24 @@ export function start(system) {
     byId.set(def.id, node);
   }
 
-  // 银河系：恒星点云（旋臂 + 臂间 + 核球 + 银晕）挂到 galaxyGroup，随银盘一起自转
+  // 背景点云：银河系用专用旋臂生成器；上级层级（星系群 / 超星系团 / 宇宙网）
+  // 用通用的纤维－结点生成器，并把可点击锚点作为亮结点喂进去。
   if (system.galaxy) {
-    galaxyField = buildGalaxyField(system.galaxy, system.galaxy.scaleKpc ?? 1);
+    galaxyField = system.galaxy.kind
+      ? buildCosmosField(system.galaxy)
+      : buildGalaxyField(system.galaxy, system.galaxy.scaleKpc ?? 1);
     (galaxyGroup || scene).add(galaxyField);
-    galaxyGlow = makeGalaxyGlow(system.galaxy.diskRadiusKpc);
-    (galaxyGroup || scene).add(galaxyGlow);
+    // 银盘柔光是盘状星系专属；宇宙网加一层大椭圆辉光只会糊掉黑洞洞的空洞
+    if (system.galaxy.glow !== false) {
+      galaxyGlow = makeGalaxyGlow(system.galaxy.diskRadiusKpc ?? 15);
+      (galaxyGroup || scene).add(galaxyGlow);
+    }
+    // 星系自己的页面：画出它自己的形态（高倾角尘环 / 絮状多臂 / 不规则棒…）。
+    // 上级视野里它仍只是一个点 —— 这里不画，那里才画，才不会夸大尺度。
+    if (system.galaxy.portrait) {
+      portrait = buildGalaxyPortrait(system.galaxy.portrait);
+      if (portrait) (galaxyGroup || scene).add(portrait.group);
+    }
   }
   // 远景星系（背景点缀，静态不随银盘自转，纯视觉、不可交互）
   if (system.otherGalaxies?.length) {
@@ -777,6 +819,7 @@ export function start(system) {
       // 否则巨大的锥体会挡住后面天体的点击，且描边效果会很怪
       if (n.comet) raycastTargets.push(n.comet.coma);
       if (n.halo) raycastTargets.push(n.halo);
+      if (n.pick) raycastTargets.push(n.pick);   // 宇宙层级页的透明点击热区
       if (n.model) n.model.traverse((c) => { if (c.isMesh) raycastTargets.push(c); });
     }
     if (sunMesh) raycastTargets.push(sunMesh);
@@ -847,6 +890,7 @@ export function start(system) {
     for (const [, node] of byId) {
       if (node.mesh) node.mesh.scale.setScalar((node.def?.size ?? 0.07) * f);
       if (node.halo) node.halo.scale.setScalar((node.def?.glowSize ?? 0.4) * f);
+      if (node.pick) node.pick.scale.setScalar((node.def?.pickSize ?? 0.6) * f);
     }
     for (const [, sc] of deepSkyShowcases) {
       const boost = sc.visible ? 3.0 : 1;
@@ -890,9 +934,10 @@ export function start(system) {
       // 焦点必须取「太阳此刻的真实世界坐标」：galaxyGroup 在全景档会缓慢自转，
       // 直接用静态 sunPos 会差出几十光年，在小档（视野仅几光年）里天体全跑出画面。
       scene.updateMatrixWorld(true);
-      const sunNode = byId.get('sun');
-      if (sunNode?.group) sunNode.group.getWorldPosition(tierFocus);
-      else tierFocus.set(...system.sunPos);
+      // 银河系档聚焦太阳，宇宙各层聚焦该层的「观察原点」子节点（我们所在的链）。
+      const focusNode = byId.get(system.tierFocusId ?? 'sun');
+      if (focusNode?.group) focusNode.group.getWorldPosition(tierFocus);
+      else tierFocus.set(...(system.sunPos ?? [0, 0, 0]));
     }
     // 小档冻结银盘自转，否则几十光年视野里天体会持续漂走（沿用「聚焦即冻结」约定）
     paused = i > 0;
@@ -942,6 +987,21 @@ export function start(system) {
     }
     // 银盘整体柔光是 15 kpc 尺度的东西，小档只会糊满屏；点云本身仍保留。
     if (galaxyGlow) galaxyGlow.visible = i === 0;
+    // 星系肖像：盘面贴图只在前两档显示，再放大就只留恒星颗粒（贴图会糊成一片）；
+    // 盘内点同样钳成屏幕空间像素，避免近距离膨胀成彩色光斑。
+    if (portrait) {
+      const atten = i === 0;
+      const R = portrait.config.radius;
+      const sizes = [R * 0.0055, R * 0.010];
+      const fixed = [1.6, 2.4];
+      portrait.diskPointLayers.forEach((layer, k) => {
+        const m = layer.material;
+        if (m.sizeAttenuation !== atten) { m.sizeAttenuation = atten; m.needsUpdate = true; }
+        m.size = atten ? sizes[k] : fixed[k];
+      });
+      portrait.disc.visible = i <= 1;
+      portrait.disc.material.opacity = i === 0 ? 1 : 0.42;
+    }
     // 大小麦哲伦云在 5~6 万光年外，只有全景档该看见；否则 10 光年视野的
     // 角落会挂着一颗几万光年外的模糊光斑，破坏尺度感。
     for (const dg of distantGalaxyObjs) dg.visible = i === 0;
@@ -987,15 +1047,16 @@ export function start(system) {
     title.className = 'bn-title';
     title.textContent = systemName(system.label ?? system.id);
     head.appendChild(title);
-    // 卫星系统页：左上角常驻"返回上级系统"按钮
-    if (system.parentSystem) {
-      const back = document.createElement('a');
-      back.className = 'bn-back';
-      back.href = system.parentSystem.url;
-      back.textContent = t('back', systemName(system.parentSystem.label));
-      head.appendChild(back);
-    }
+    // 上级 / 跨层级导航统一交给顶部的宇宙导航条（面包屑 + 上下级 + 宇宙地图）。
+    // 这里不再塞只认 parentSystem 的返回按钮 —— 那正是「太阳系回不去银河系」的根因。
     nav.appendChild(head);
+    // 星系肖像页：用一句话点出这个星系的真实形态，和画面互相印证
+    if (system.portraitCaption) {
+      const cap = document.createElement('div');
+      cap.className = 'bn-caption';
+      cap.textContent = system.portraitCaption;
+      nav.appendChild(cap);
+    }
 
     const list = document.createElement('div');
     list.className = 'bn-list';
@@ -1029,7 +1090,7 @@ export function start(system) {
       if (e.def?.dLy != null && e.def.dLy > 0) {
         const dist = document.createElement('span');
         dist.className = 'bn-dist';
-        dist.textContent = distText(e.def.dLy);
+        dist.textContent = e.def.distanceText ?? distText(e.def.dLy);
         row.appendChild(dist);
       }
       row.onclick = () => selectBody(e.id);
@@ -1037,12 +1098,12 @@ export function start(system) {
       if (e.def && e.def.childSystem) {
         const go = document.createElement('span');
         go.className = 'bn-go';
-        const goLabel = systemName(e.def.childSystemLabel ?? t('childGo'));
+        const goLabel = systemName(e.def.childSystemShort ?? e.def.childSystemLabel ?? t('childGo'));
         go.textContent = goLabel;
         go.title = t('childTitle', goLabel);
         go.onclick = (ev) => {
           ev.stopPropagation();
-          window.location.href = e.def.childSystem;
+          window.location.href = universeHref(e.def.id) ?? e.def.childSystem;
         };
         row.appendChild(go);
       }
@@ -1109,7 +1170,7 @@ export function start(system) {
       btn.className = 'child-btn';
       const goLabel = t('childBtn', systemName(def.childSystemLabel ?? bodyName(def)));
       btn.textContent = goLabel;
-      btn.onclick = () => { window.location.href = def.childSystem; };
+      btn.onclick = () => { window.location.href = universeHref(def.id) ?? def.childSystem; };
       box.querySelector('.planet-info-content').appendChild(btn);
     }
     box.style.display = 'block';
@@ -1274,18 +1335,33 @@ export function start(system) {
 
     const add = (id, node, def, typeOverride) => {
       const short = shortName(bodyName(def));
+      // 宇宙层级页：点小到几乎看不见，所以第二行用文字点出类型与真实直径
+      const note = def.labelNote ?? null;
       const el = document.createElement('div');
       const type = typeOverride ?? bodyType(def);
-      el.className = 'bl-item type-' + type;
+      el.className = 'bl-item type-' + type + (note ? ' with-note' : '');
+      // 按成员自身配色，免得所有星系的标签都是同一种暖黄、又「长得一样」
+      if (def.labelColor) el.style.setProperty('--bl-color', def.labelColor);
       const dot = document.createElement('span');
       dot.className = 'bl-dot';
+      const text = document.createElement('span');
+      text.className = 'bl-text';
       const name = document.createElement('span');
+      name.className = 'bl-name';
       name.textContent = short;
+      text.appendChild(name);
+      if (note) {
+        const sub = document.createElement('span');
+        sub.className = 'bl-note';
+        sub.textContent = note;
+        text.appendChild(sub);
+      }
       el.appendChild(dot);
-      el.appendChild(name);
+      el.appendChild(text);
       labelLayer.appendChild(el);
       // 宽度按中英文字符估算，用于避让；不读 offsetWidth，避免每帧强制回流
-      const w = [...short].reduce((s, ch) => s + (ch.charCodeAt(0) > 255 ? 12 : 7), 0) + 26;
+      const est = (s) => [...s].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 12 : 7), 0);
+      const w = Math.max(est(short), note ? est(note) * 0.82 : 0) + 26;
       // 全景档所有近邻恒星都投影到太阳附近，卫星系统内卫星群也挤成一团：
       // 避让时优先保留中心天体 / 锚点与有名有姓的深空天体，普通成员让位。
       // 非银河系页里「无 orbit 且无 parent」的就是该子系统中心天体（木星、地球…）。
@@ -1294,7 +1370,7 @@ export function start(system) {
       const weight = central ? -1
         : (type === 'nebula' || type === 'cluster' || type === 'blackhole') ? 0
         : type === 'star' ? 2 : 1;
-      labelRows.set(id, { el, node, w, h: 18, weight });
+      labelRows.set(id, { el, node, w, h: note ? 30 : 18, weight });
     };
 
     for (const [id, node] of byId) add(id, node, node.def);
@@ -1355,13 +1431,19 @@ export function start(system) {
     }
     // 贪心避让：选中的 > 锚点/深空天体 > 普通恒星，同级按屏幕纵坐标从上往下放；
     // 与已放置标签矩形重叠的直接收起，避免一堆名字糊成一团。
-    items.sort((a, b) => a.pri - b.pri || a.row.weight - b.row.weight || a.y - b.y);
+    items.sort((a, b) => a.pri - b.pri || a.row.weight - b.row.weight || a.sy - b.sy);
     const placed = [];
     // 左侧菜单 z-index 12 会盖住标签层（10）；把它当成一个已占用矩形，
     // 免得名字从菜单边缘露出半截。一次只读，且所有 DOM 写入都在后面。
     const navEl = document.querySelector('.body-nav');
     if (navEl) {
       const r = navEl.getBoundingClientRect();
+      placed.push({ x1: r.left - 4, y1: r.top - 2, x2: r.right + 4, y2: r.bottom + 2 });
+    }
+    // 顶部宇宙导航条同样是不可盖住的 UI 区域
+    const uniEl = document.querySelector('.universe-nav');
+    if (uniEl) {
+      const r = uniEl.getBoundingClientRect();
       placed.push({ x1: r.left - 4, y1: r.top - 2, x2: r.right + 4, y2: r.bottom + 2 });
     }
     for (const it of items) {
@@ -1392,13 +1474,17 @@ export function start(system) {
     }
   }
 
-  // ---------- 左侧天体快捷菜单 + 底部比例尺条 + 名字标签（注入式）----------
+  // ---------- 左侧天体快捷菜单 + 顶部宇宙导航 + 底部比例尺条 + 名字标签（注入式）----------
   buildBodyNav();
   buildBodyLabels();
+  // 面包屑 / 上下级 / 宇宙地图：所有页面统一挂载，位置完全由注册表驱动
+  mountUniverseNav({ currentId: currentNodeId });
 
   let scaleBar = null;
   function buildScaleBar() {
-    if (!TIERS) return;
+    // 单档页面（星系形态页只有一个全景视野）不画档位条：一条孤零零的
+    // 大按钮没有可切的东西，视野跨度已经写在左侧形态说明里。
+    if (!TIERS || TIERS.length < 2) return;
     const bar = document.createElement('div');
     bar.id = 'scaleBar';
     bar.className = 'scale-bar';
@@ -1489,7 +1575,12 @@ export function start(system) {
 
   // ---------- 滚轮：跨 10× 自动切档 + 现有 zoomOutTo 边界 ----------
   // 卫星/行星系统页行为完全不变；银河系页由 animate() 在 controls.update() 后判档。
-  const zoomOutUrl = system.parentSystem?.url ?? system.zoomOutTo?.url;
+  // 上浮 / 下钻边界一律从宇宙层级注册表推导：
+  // 太阳系 → 银河系 → 本星系群 → 室女座 → 拉尼亚凯亚 → 宇宙，任意一层都能继续走。
+  // 旧字段只作为页面未被注册表收录时的兜底。
+  const zoomInUrl = childHref(currentNodeId);
+  const zoomOutUrl = parentHref(currentNodeId)
+    ?? system.parentSystem?.url ?? system.zoomOutTo?.url;
   window.addEventListener('wheel', (e) => {
     if (e.target && e.target.closest && e.target.closest('#bodyNav, #scaleBar')) return;
     // OrbitControls 的 wheel 监听挂在 canvas（target 阶段），本监听挂在 window
@@ -1502,8 +1593,8 @@ export function start(system) {
       if (e.deltaY < 0 && d <= base / 10) {
         if (currentTier < TIERS.length - 1) applyTier(currentTier + 1, { instant: true });
         else {
-          // 最内档继续放大 → 下钻太阳系，接上现有 childSystem 边界
-          const sunChild = infoById.get('sun')?.childSystem;
+          // 最内档继续放大 → 下钻到下一级（银河系→太阳系、本星系群→银河系…）
+          const sunChild = zoomInUrl ?? infoById.get('sun')?.childSystem;
           if (sunChild) window.location.href = sunChild;
         }
       } else if (e.deltaY > 0 && d >= controls.maxDistance * 0.985) {

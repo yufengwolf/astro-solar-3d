@@ -9,8 +9,8 @@
 <body>
     <div class="home-wrap">
         <header class="home-header">
-            <h1>太阳系 · 银河系 3D 交互可视化</h1>
-            <p>从行星系统一路放大到银河系。基于 JPL / PDS 真实轨道参数构建，可逐级下钻：太阳系总览 → 行星卫星系统 →（缩到最外圈再往外滚）银河系。每个页面都支持「视觉放大 ×N」、多取景视角切换与全屏。轨道比例真实，天体尺寸可按需放大。</p>
+            <h1>太阳系 · 银河系 · 宇宙 3D 交互可视化</h1>
+            <p>从可观测宇宙一路下钻到行星卫星系统，也能从任意一层向上浮回去，层级之间完全互通。太阳系与 7 个卫星系统按 JPL / PDS 真实轨道参数构建，大尺度结构为定性示意。每页顶部都有层级导航与宇宙地图，支持「视觉放大 ×N」、多取景视角与全屏。</p>
         </header>
 
         <main class="home-grid">
@@ -24,7 +24,7 @@
             <a class="home-card" style="--accent:#9b8cff" href="./galaxy.html">
                 <div class="hc-sub">Milky Way</div>
                 <div class="hc-name">银河系</div>
-                <div class="hc-desc">放大一级：太阳只是约 2000 亿颗恒星中普通的一颗。旋臂为定性示意；点「太阳」可下钻回太阳系，在太阳系总览缩到最外圈再往外滚则回到这里。</div>
+                <div class="hc-desc">我们的家园星系，太阳只是约 2000 亿颗恒星中普通的一颗。旋臂为定性示意；点「太阳」下钻太阳系，向上可回到本星系群、室女座超星系团直到宇宙。</div>
                 <div class="hc-go">进入 →</div>
             </a>
 
@@ -83,6 +83,6 @@
             基于 Three.js · 数据取自 JPL / PDS · MIT 许可
         </footer>
     </div>
-    <script type="module" src="./i18n.js"></script>
+    <script type="module" src="./entries/home.js"></script>
 </body>
 </html>

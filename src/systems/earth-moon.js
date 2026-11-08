@@ -16,7 +16,7 @@ import { mk } from './mk.js';
  * - 想要完全 1:1，把 distanceFactor 改成 1、radiusPower 改成 1。
  */
 export default {
-  parentSystem: { label: '太阳系', url: 'overview.html' },
+  // 上级系统由 src/universe.js 的层级注册表统一提供
   id: 'earth-moon',
   label: '地月系统',
   hasSun: false,

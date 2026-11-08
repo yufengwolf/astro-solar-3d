@@ -21,7 +21,7 @@ import { mk } from './mk.js';
  * 因此会显得彼此挨得很近（真实情况就是这么挤）。
  */
 export default {
-  parentSystem: { label: '太阳系', url: 'overview.html' },
+  // 上级系统由 src/universe.js 的层级注册表统一提供
   id: 'neptune',
   label: '海王星系统',
   hasSun: false,

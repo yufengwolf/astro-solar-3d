@@ -15,7 +15,7 @@ import { mk } from './mk.js';
  * 尺度：distanceFactor = 0.7、radiusPower = 0.4、minBodyUnits = 0.4。
  */
 export default {
-  parentSystem: { label: '太阳系', url: 'overview.html' },
+  // 上级系统由 src/universe.js 的层级注册表统一提供
   id: 'pluto',
   label: '冥王星系统',
   hasSun: false,
