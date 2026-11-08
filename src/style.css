@@ -200,6 +200,24 @@ p {
 .bn-item.type-comet .bn-dot { background: #7fe3e0; color: #7fe3e0; }
 .bn-item.type-star .bn-dot { background: #fff0a6; color: #fff0a6; box-shadow: 0 0 6px #ffd86b; }
 .bn-item.type-moon .bn-dot { background: #b9c2d6; color: #b9c2d6; }
+/* 深空天体：星云 / 球状星团 / 致密天体 */
+.bn-item.type-nebula .bn-dot { background: #ff8fbf; color: #ff8fbf; box-shadow: 0 0 6px #ff6fa8; }
+.bn-item.type-cluster .bn-dot { background: #ffe2a8; color: #ffe2a8; box-shadow: 0 0 6px #ffcf7a; }
+.bn-item.type-blackhole .bn-dot { background: #ffa45c; color: #ffa45c; box-shadow: 0 0 6px #ff8a3c; }
+/* 比例尺小档才出现的邻近天体：疏散星团 / 系外行星系统 */
+.bn-item.type-opencluster .bn-dot { background: #a8c8ff; color: #a8c8ff; box-shadow: 0 0 6px #7fa8ff; }
+.bn-item.type-exoplanet .bn-dot { background: #9fe6c0; color: #9fe6c0; box-shadow: 0 0 6px #6fd6a4; }
+/* 菜单分组标题（按类型分隔，避免十几个天体挤成一长串） */
+.bn-group {
+    padding: 9px 8px 4px;
+    margin-top: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: #7f93b8;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.bn-group:first-child { border-top: none; margin-top: 0; }
 .bn-name { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bn-go {
     flex: 0 0 auto;
@@ -211,6 +229,14 @@ p {
     cursor: pointer;
 }
 .bn-go:hover { background: rgba(255, 215, 107, 0.16); }
+/* 银河系菜单里的距离标注：切档时一眼看出「这一档在看多远」 */
+.bn-dist {
+    flex: 0 0 auto;
+    font-size: 10px;
+    color: #8397bb;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.2px;
+}
 /* 信息卡里的"进入卫星系统"按钮 */
 .child-btn {
     margin-top: 12px;
@@ -225,3 +251,165 @@ p {
     cursor: pointer;
 }
 .child-btn:hover { filter: brightness(1.08); }
+
+/* ===== 底部比例尺条（银河系页，start() 注入式） ===== */
+.scale-bar {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    z-index: 12;
+    min-width: 430px;
+    padding: 9px 14px 8px;
+    background: rgba(6, 10, 22, 0.84);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    color: #eaf0ff;
+    text-align: center;
+}
+.sb-label { font-size: 12px; color: #9fb0d0; letter-spacing: 0.4px; }
+.sb-label b { color: #7fe3e0; font-weight: 600; }
+.sb-tiers { display: flex; justify-content: center; gap: 5px; margin: 7px 0 5px; }
+.sb-tier {
+    flex: 1 1 0;
+    padding: 5px 4px;
+    font-size: 11px;
+    color: #b7c6e2;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.sb-tier:hover { background: rgba(127, 227, 224, 0.14); }
+.sb-tier.active {
+    color: #0a0e1a;
+    background: #7fe3e0;
+    border-color: #7fe3e0;
+    font-weight: 600;
+}
+.sb-hint { font-size: 10px; color: #6f82a5; letter-spacing: 0.2px; }
+@media (max-width: 620px) {
+    .scale-bar { min-width: 0; width: calc(100vw - 32px); }
+    .sb-tier { font-size: 10px; padding: 5px 2px; }
+}
+
+/* ===== 天体名字标签（银河系页，DOM 投影层） ===== */
+/* z-index 10：在 canvas 之上、左侧菜单/比例尺/信息卡（12）之下，
+   所以标签不会盖住控制面板，被挡住的部分也由菜单里的同名条目兜底。 */
+#bodyLabels {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    overflow: hidden;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+.bl-item {
+    position: absolute;
+    left: 0;
+    top: 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 18px;
+    padding: 0 7px 0 6px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 9px;
+    background: rgba(4, 8, 20, 0.68);
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+    color: #d7e4ff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    will-change: transform;
+}
+/* 引到天体本身的细线，长度由 JS 按光晕半径动态给 */
+.bl-item::before {
+    content: '';
+    position: absolute;
+    left: calc(-1 * var(--lead, 7px));
+    top: 8px;
+    width: var(--lead, 7px);
+    height: 1px;
+    background: currentColor;
+    opacity: 0.45;
+}
+.bl-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 5px currentColor;
+    flex: 0 0 auto;
+}
+.bl-item.type-star { color: #fff0b8; }
+.bl-item.type-nebula { color: #ff9fc8; }
+.bl-item.type-cluster { color: #ffe2a8; }
+.bl-item.type-blackhole { color: #ffb474; }
+.bl-item.type-opencluster { color: #b6d0ff; }
+.bl-item.type-exoplanet { color: #a8e9c8; }
+/* 太阳系总览 / 各卫星系统页的类型配色 */
+.bl-item.type-sun { color: #ffe08a; }
+.bl-item.type-planet { color: #bcd4ff; }
+.bl-item.type-moon { color: #cbd6e8; }
+.bl-item.type-dwarf { color: #d9b8ff; }
+.bl-item.type-comet { color: #9fe8d8; }
+/* 靠近右边界时标签翻到天体左侧，引线跟着改到右边 */
+.bl-item.flip::before {
+    left: auto;
+    right: calc(-1 * var(--lead, 7px));
+}
+.bl-item.active {
+    color: #ffffff;
+    font-weight: 600;
+    border-color: rgba(127, 227, 224, 0.55);
+    background: rgba(9, 26, 36, 0.82);
+    text-shadow: 0 1px 2px #000, 0 0 8px #7fe3e0;
+}
+@media (max-width: 620px) {
+    .bl-item { font-size: 10px; }
+}
+
+/* ===== 界面语言切换 ===== */
+.lang-toggle {
+    position: fixed;
+    /* 左侧菜单宽 212 + 8，贴在菜单右上方，避开左下角标与右下信息卡 */
+    left: 228px;
+    top: 8px;
+    z-index: 14;
+    padding: 5px 12px;
+    border: 1px solid rgba(140, 190, 255, 0.38);
+    border-radius: 8px;
+    background: rgba(6, 10, 22, 0.86);
+    color: #cfe4ff;
+    font-size: 12px;
+    line-height: 16px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+.lang-toggle:hover { background: rgba(30, 54, 88, 0.92); color: #fff; }
+
+/* 比例尺按钮改成中文「10万光年」后更长，给中文模式留够宽度 */
+html:lang(zh-CN) .scale-bar { min-width: 500px; }
+@media (max-width: 620px) {
+    html:lang(zh-CN) .scale-bar { min-width: 0; }
+    .lang-toggle { left: 224px; top: 8px; padding: 4px 8px; font-size: 11px; }
+}
+
+/* dat.GUI 自带 "Close Controls / Open Controls"：用伪元素换成本地化文案 */
+#gui-container .close-button.localized { font-size: 0; }
+#gui-container .close-button.localized::after {
+    content: '收起控制面板';
+    font-size: 11px;
+}
+#gui-container .dg.main.closed .close-button.localized::after { content: '展开控制面板'; }
+html:lang(en) #gui-container .close-button.localized::after { content: 'Close Controls'; }
+html:lang(en) #gui-container .dg.main.closed .close-button.localized::after { content: 'Open Controls'; }
