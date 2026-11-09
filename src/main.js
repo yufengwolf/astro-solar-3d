@@ -247,13 +247,13 @@ function makeDeepSkyShowcase(def) {
       blending: THREE.NormalBlending,
       toneMapped: false,
     }));
-    sp.scale.set(1.1, 1.1, 1);
+    sp.scale.set(0.85, 0.85, 1);
     obj = sp;
   }
   obj.visible = false;
   // 记录基准尺寸：切比例尺档位时所有「示意尺寸」要按 10^-tier 同比缩小，
   // 才能让它们在画面里占屏恒定，而不是随相机贴近被放大成满屏大球。
-  obj.userData.baseScale = obj.isSprite ? 1.1 : 1;
+  obj.userData.baseScale = obj.isSprite ? 0.85 : 1;
   return obj;
 }
 
@@ -958,7 +958,10 @@ export function start(system) {
       if (node.pick) node.pick.scale.setScalar((node.def?.pickSize ?? 0.6) * k);
     }
     for (const [, sc] of deepSkyShowcases) {
-      const boost = sc.visible ? 3.0 : 1;
+      // 聚焦时只略放大（1.6×）便于辨认，不再 3× 铺满；移动端再收 0.7×，
+      // 否则星云 sprite 在窄屏里占比过大（这正是之前「星云还是过大」的主因之一）。
+      const mob = window.innerWidth <= 760;
+      const boost = (sc.visible ? 2.2 : 1) * (mob ? 0.7 : 1);
       sc.scale.setScalar((sc.userData.baseScale ?? 1) * f * boost);
       sc.traverse((o) => { if (o.isPoints) o.material.size = 0.035 * f * boost; });
     }
@@ -1484,7 +1487,17 @@ export function start(system) {
   /** 取景距离：小卫星按半径、彗星按尾长；菜单聚焦与外链即时聚焦共用一套公式。 */
   function followDistance(def) {
     const tailUnits = def.comet ? (def.comet.ionTailUnits ?? 100) : 0;
-    return def.cameraOffset ?? Math.max(def.size * 8, tailUnits * 0.35, 2);
+    // 深空展示物（星云/星团/黑洞）没有 size 字段，原来的 Math.max(undefined*8, ...)
+    // 算出 NaN，相机飞到无穷，星云 sprite 直接糊满整屏——这正是「星云过大」的根因。
+    // 按类型给一个能完整看见、又不铺满视野的视距。
+    let base = def.cameraOffset ?? (def.size != null ? def.size * 8 : null);
+    if (base == null) {
+      if (def.deepSky?.kind === 'nebula') base = 3.4;
+      else if (def.deepSky?.kind === 'cluster') base = 3.0;
+      else if (def.deepSky?.kind === 'blackhole') base = 3.6;
+      else base = 2;
+    }
+    return Math.max(base, tailUnits * 0.35, 2);
   }
 
   /**
@@ -2010,6 +2023,34 @@ export function start(system) {
       row.appendChild(btn);
     });
     bar.appendChild(row);
+    // 移动端紧凑控件：只显示「当前尺度 + 加减」，放在底部当参考，不占主屏。
+    // 桌面不显示（完整 6 档条更直观）；移动端折叠态由 CSS 接管显示，展开态隐藏。
+    const compact = document.createElement('div');
+    compact.className = 'sb-compact';
+    const sbMinus = document.createElement('button');
+    sbMinus.type = 'button';
+    sbMinus.className = 'sb-minus';
+    sbMinus.textContent = '−';          // 缩小：往更大尺度切一档
+    sbMinus.setAttribute('aria-label', t('scaleMinus'));
+    const sbNow = document.createElement('span');
+    sbNow.className = 'sb-now';
+    const sbPlus = document.createElement('button');
+    sbPlus.type = 'button';
+    sbPlus.className = 'sb-plus';
+    sbPlus.textContent = '+';           // 放大：往更小尺度切一档
+    sbPlus.setAttribute('aria-label', t('scalePlus'));
+    sbMinus.onclick = (e) => {
+      e.stopPropagation();
+      if (follow) stopFollow();
+      if (currentTier > 0) applyTier(currentTier - 1, { instant: true });
+    };
+    sbPlus.onclick = (e) => {
+      e.stopPropagation();
+      if (follow) stopFollow();
+      if (currentTier < TIERS.length - 1) applyTier(currentTier + 1, { instant: true });
+    };
+    compact.append(sbMinus, sbNow, sbPlus);
+    bar.appendChild(compact);
     // 背景方位：三维星空里换个视线方向，背景里的远处天体就换成另一批。
     const backdrop = document.createElement('button');
     backdrop.className = 'sb-backdrop';
@@ -2055,6 +2096,9 @@ export function start(system) {
     }
     const hint = scaleBar.querySelector('.sb-hint');
     if (hint) hint.textContent = t(spanOverride != null ? 'focusScaleHint' : 'scaleHint');
+    // 移动端紧凑控件的「当前尺度」同步：特写时显真实视野，否则显档位
+    const now = scaleBar.querySelector('.sb-now');
+    if (now) now.textContent = spanOverride != null ? spanText(spanOverride) : tierShort(TIERS[i]);
   }
   buildScaleBar();
   updateBackdropUI();   // 未聚焦时先收起「换个背景」按钮
