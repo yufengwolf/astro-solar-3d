@@ -70,6 +70,15 @@ const focusOnBody = main.slice(
 assert.ok(focusOnBody.includes('beginFollow('), 'focusOn 未启动跟随');
 assert.ok(!focusOnBody.includes('paused'), 'focusOn 仍在冻结时间');
 assert.ok(main.includes('currentTier === 0 || follow'), '银河系小档在跟随中仍冻结银盘自转');
+// 用户拖拽 / 缩放的判定阈值必须随取景尺度收缩：固定 0.01 会让银河系最小档
+// （整段相机偏移 ~4e-4）的每一次缩放都被判成「没动」，镜头每帧弹回，
+// 恒星近景球也就永远等不到放大的那一刻。
+const epsLine = main.match(/const eps = (.+);\s*\n\s*const userMoved/);
+assert.ok(epsLine, '跟随里找不到用户操作判定阈值');
+assert.ok(/Math\.min\(0\.01,\s*before\.length\(\)/.test(epsLine[1]),
+  '用户操作阈值必须按 before.length() 收缩，不能用固定 0.01 兜底');
+assert.ok(!/Math\.max\(0\.01,\s*before\.length\(\)/.test(epsLine[1]),
+  'Math.max(0.01, …) 会在银河系小档吞掉所有用户缩放');
 
 // ---------- 4) 双语 / 样式 / 脚本 / 文档一致 ----------
 const i18n = read('src/i18n.js');

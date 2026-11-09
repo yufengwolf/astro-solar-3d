@@ -69,6 +69,9 @@ const UI = {
     followingNote: (on) => on
       ? '镜头跟随中：随该天体一同公转，时间与背景照常运行'
       : '时间已暂停：镜头锁定该天体，全场静止',
+    // 恒星近景：放大后才出现的「类太阳」球体
+    starRadius: (r) => `半径：约 ${r} 倍太阳半径（近景示意，按真实半径比例缩放）`,
+    starCloseupHint: '继续放大可以看到这颗恒星的球面与日冕',
     // 宇宙层级导航
     navRoot: '宇宙遨游',
     navHome: '星图首页',
@@ -122,6 +125,9 @@ const UI = {
     followingNote: (on) => on
       ? 'Camera tracking: follows this body along its orbit; time keeps running'
       : 'Time paused: camera locked on this body, everything is still',
+    // Close-up star portrait
+    starRadius: (r) => `Radius: ~${r} solar radii (close-up sketch, scaled by real radius)`,
+    starCloseupHint: 'Zoom in further to see this star’s photosphere and corona',
     // Cosmic hierarchy navigation
     navRoot: 'Cosmic Atlas',
     navHome: 'Atlas home',

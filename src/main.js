@@ -12,6 +12,9 @@ import { createCometParts, updateComet, updateCometViewport, cometGlobals } from
 import { buildCosmosField } from './cosmos-field.js';
 import { buildGalaxyPortrait } from './galaxy-portrait.js';
 import {
+  createStarPortrait, portraitRadius, portraitOpacity, tierFactorOf,
+} from './star-portrait.js';
+import {
   resolveCurrentId, parentHref, childHref,
   href as universeHref,
 } from './universe.js';
@@ -621,6 +624,7 @@ export function start(system) {
   const nodes = [];
   const byId = new Map();
   const deepSkyShowcases = new Map();  // id → 放大展示物（默认隐藏，聚焦时显示）
+  const starPortraits = new Map();     // id → 恒星近景球（默认隐藏，镜头贴近才显示）
   // 银盘尺度的背景对象：聚焦深空天体特写时要整体藏掉，否则近距离下
   // sizeAttenuation 会把每个恒星点放大成满屏彩色圆斑。
   let galaxyField = null;
@@ -683,6 +687,16 @@ export function start(system) {
       const showcase = makeDeepSkyShowcase(def);
       node.group.add(showcase);
       deepSkyShowcases.set(def.id, showcase);
+    }
+    // 太阳系以外的普通恒星：远景仍是上面那个 0.07 的点；镜头真正靠近时，
+    // 才在同一世界坐标浮出一颗「类太阳」球体（光球贴图 + 色球 / 日冕）。
+    // 星云 / 星团 / 黑洞走各自的 deepSky 展示物，不重复挂球。
+    // radiusSun 是硬门槛：cosmos.html 的星系锚点同样带 star:true（为了复用
+    // 自发光点材质），但它们是星系不是恒星，绝不能放大成一颗球。
+    if (def.star && !def.deepSky && Number.isFinite(def.radiusSun)) {
+      const p = createStarPortrait(def);
+      node.group.add(p.group);
+      starPortraits.set(def.id, { ...p, def, node });
     }
     nodes.push(node);
     byId.set(def.id, node);
@@ -1057,8 +1071,49 @@ export function start(system) {
     applyTierScale(currentTier);
   }
 
+  // ---------- 恒星近景 LOD：远景一个点，镜头贴近才长出球体 ----------
+  // 判定只依赖「相机到恒星的距离 / 当前档位取景距离」，不看是否选中，
+  // 于是滚轮一路放大任意一颗恒星都会看到它；全景档里所有球一律不可见。
+  const _portraitWp = new THREE.Vector3();
+  function updateStarPortraits(dtSec) {
+    if (!starPortraits.size || !TIERS) return;
+    const base = tierCamDist(currentTier);
+    const f = tierFactorOf(currentTier);
+    for (const [, p] of starPortraits) {
+      if (!p.node.group.visible) { p.group.visible = false; continue; }
+      p.node.group.getWorldPosition(_portraitWp);
+      const d = camera.position.distanceTo(_portraitWp);
+      const a = portraitOpacity(d, base);
+      if (a < 0.01) { p.group.visible = false; continue; }
+      p.group.visible = true;
+      p.group.scale.setScalar(portraitRadius(p.def.size ?? 0.07, f, p.def.radiusSun, d));
+      p.sphere.material.opacity = a;
+      p.sphere.rotation.y += dtSec * 0.05;   // 光球缓慢自转，特写里不至于死板
+      // 加法混合下 opacity 不可靠，色球 / 日冕直接按可见阈值开关
+      p.rim.visible = p.corona.visible = a > 0.15;
+    }
+  }
+
+  /** 外链直达 / hash 切换时把镜头推进到球体已显形的距离，别让外链只落在一个针尖上。 */
+  function setStarCloseup(def, obj) {
+    if (!TIERS || !starPortraits.has(def.id)) return;
+    const wp = new THREE.Vector3();
+    obj.getWorldPosition(wp);
+    const dir = camera.position.clone().sub(controls.target);
+    if (dir.lengthSq() < 1e-18) dir.set(0, 0.42, 1);
+    const want = dir.normalize().multiplyScalar(tierCamDist(currentTier) * 0.45);
+    controls.target.copy(wp);
+    camera.position.copy(wp).add(want);
+    camera.lookAt(wp);
+    if (follow) {
+      follow.want.copy(want);
+      follow.offset.copy(want);
+      follow.lastPos.copy(wp);
+    }
+  }
+
   // 选中并飞向某个天体（菜单点击 / 3D 拾取共用）
-  function selectBody(id) {
+  function selectBody(id, opts = {}) {
     const def = infoById.get(id);
     const obj = focusObjectOf(id);
     if (!def || !obj) return;
@@ -1071,6 +1126,8 @@ export function start(system) {
       // 档位页不飞特写：保持当前取景距离，但焦点跟着天体走
       beginFollow(def, obj, null, 'keep');
       applyTier(def.tier ?? currentTier, { instant: true, focus: wp });
+      // 菜单点击保留档位全景（上下文优先）；外链 / hash 直达则推进到近景特写。
+      if (opts.close) setStarCloseup(def, obj);
     } else {
       focusOn(def, obj);
     }
@@ -1228,7 +1285,10 @@ export function start(system) {
     //    必须在共转之前比：共转本身就会改变偏移，拿它比对会误判成用户操作。
     const before = follow.offset.clone();
     const actual = camera.position.clone().sub(follow.lastPos);
-    const eps = Math.max(0.01, before.length() * 0.002);
+    // 阈值必须随取景尺度收缩：太阳系页相机偏移上百单位，0.01 足够滤掉阻尼噪声；
+    // 但银河系最小档整段偏移只有 ~4e-4，固定 0.01 会把用户每一次滚轮缩放都
+    // 判成「没动」，镜头被每帧弹回，恒星近景球永远等不到放大的那一刻。
+    const eps = Math.max(1e-9, Math.min(0.01, before.length() * 0.002));
     const userMoved = actual.distanceTo(before) > eps;
     if (userMoved) before.copy(actual);
 
@@ -1313,6 +1373,13 @@ export function start(system) {
       .join('\n');
     if (settings.bodyExaggeration > 1) {
       detail += (detail ? '\n' : '') + t('infoZoom', settings.bodyExaggeration);
+    }
+    // 恒星：写出真实半径，并在还是「一个点」时提示继续放大可看到球面
+    if (def.radiusSun != null) {
+      detail += (detail ? '\n' : '') + t('starRadius', def.radiusSun);
+      if (!starPortraits.get(def.id)?.group.visible) {
+        detail += '\n' + t('starCloseupHint');
+      }
     }
     if (follow) detail += (detail ? '\n' : '') + t('followingNote', settings.followMotion);
     detailEl.innerText = detail;
@@ -1463,6 +1530,7 @@ export function start(system) {
     }
 
     controls.update();
+    updateStarPortraits(dtSec);  // 相机位姿定下来后再判恒星近景显隐与球径
     updateLabels();   // 相机/天体动完再投影，标签才不会慢一帧
 
     requestAnimationFrame(animate);
@@ -1740,7 +1808,12 @@ export function start(system) {
       const def = infoById.get(focusId);
       selected = def;
       const obj = focusObjectOf(focusId);
-      if (obj) beginFollow(def, obj, null, 'keep');
+      if (obj) {
+        beginFollow(def, obj, null, 'keep');
+        // 恒星外链直达：把镜头推到近景球已显形的距离，否则外部 iframe
+        // 打开只看到一个针尖，等于没有「直达的视觉位置」。
+        setStarCloseup(def, obj);
+      }
       setActiveShowcase(focusId);
       highlightNav(focusId);
       showInfo(def);
@@ -1753,7 +1826,7 @@ export function start(system) {
   window.addEventListener('hashchange', () => {
     const id = resolveBody(location.hash)?.id ?? location.hash.slice(1);
     if (!id || !infoById.has(id)) return;
-    if (TIERS) selectBody(id);
+    if (TIERS) selectBody(id, { close: true });
     else focusInstant(id);
   });
   });
@@ -1806,6 +1879,11 @@ export function start(system) {
           followMotion: settings.followMotion,
           camera: camera.position.toArray(),
           target: controls.target.toArray(),
+          // 恒星近景 LOD：真实浏览器 / CDP 用来验证「放大才显形」
+          portraitCount: starPortraits.size,
+          closeups: [...starPortraits.entries()]
+            .filter(([, p]) => p.group.visible)
+            .map(([id, p]) => ({ id, radius: p.group.scale.x, opacity: p.sphere.material.opacity })),
         };
       },
     };

@@ -43,29 +43,33 @@ function equatorialToGalactic(raDeg, decDeg) {
 // 距离取 Hipparcos / Gaia / RECONS 与 Messier 星表主流值；RA/Dec 为 J2000，
 // 由上面的公式换算成 l/b，再复用 galacticToScene 得到真实相对太阳的位置。
 // 大档时它们与太阳重合成一个像素，由窗口过滤自动隐藏；小档才逐个分离出来。
+// radiusSun = 真实半径 / 太阳半径，只用于「放大后那颗球」的相对大小，
+// 不参与银盘定位。数值取自本地参考仓库 size-of-space (src/data/objects.ts)
+// 与常用恒星参数表；缺省按 1 倍太阳处理。
+// shape='cluster' 的四条其实不是恒星，放大后应显示点云星团而非球体。
 const NEARBY_STARS = [
-  { id: 'proxima', name: '比邻星（半人马座 αC）', group: '邻近恒星', ra: 217.42896, dec: -62.67944, dLy: 4.24, color: 0xff8a6a, type: '红矮星 · 耀星', brief: '离太阳最近的恒星。拥有宜居带行星「比邻星 b」，也是「南门二」三合星系统最外层的成员。' },
-  { id: 'alphaCen', name: '南门二（半人马座 α）', group: '邻近恒星', ra: 219.9021, dec: -60.8339, dLy: 4.37, color: 0xffe8b0, type: '三合星系统', brief: '全天第三亮星，由两颗类太阳恒星加比邻星组成，是离我们最近的恒星系统。' },
-  { id: 'barnard', name: '巴纳德星', group: '邻近恒星', ra: 269.4521, dec: 4.6933, dLy: 5.96, color: 0xff9a70, type: '红矮星', brief: '已知自行速度最快的恒星，每年在天上移动约 10 角秒，也在缓慢向太阳靠近。' },
-  { id: 'sirius', name: '天狼星（大犬座 α）', group: '邻近恒星', ra: 101.2871, dec: -16.7161, dLy: 8.60, color: 0xc8dcff, type: 'A1V 主序星 + 白矮星伴星', brief: '全天最亮恒星，蓝白色。伴星天狼 B 是一颗地球大小、质量却接近太阳的白矮星。' },
-  { id: 'procyon', name: '南河三（小犬座 α）', group: '邻近恒星', ra: 114.8254, dec: 5.2250, dLy: 11.46, color: 0xfff0d0, type: 'F5 IV-V 亚巨星', brief: '小犬座主星，与天狼星、参宿四构成「冬季大三角」，同样带白矮星伴星。' },
-  { id: 'altair', name: '河鼓二（牛郎星）', group: '邻近恒星', ra: 297.6958, dec: 8.8683, dLy: 16.73, color: 0xd8e8ff, type: 'A7V 主序星', brief: '天鹰座 α，与织女星隔银河相望。自转极快（约 9 小时），被甩成明显的扁球形。' },
-  { id: 'vega', name: '织女星（天琴座 α）', group: '邻近恒星', ra: 279.2346, dec: 38.7836, dLy: 25.04, color: 0xc4d8ff, type: 'A0V 主序星', brief: '天琴座主星、0 等亮星，曾是（也将再度成为）北极星。周围有尘埃盘，是标准测光基准星。' },
-  { id: 'pollux', name: '北河三（双子座 β）', group: '邻近恒星', ra: 116.3288, dec: 28.0261, dLy: 33.78, color: 0xffc890, type: 'K0 III 橙巨星', brief: '双子座最亮星，已确认拥有系外行星，是「亮星带行星」的经典案例。' },
-  { id: 'arcturus', name: '大角星（牧夫座 α）', group: '邻近恒星', ra: 213.9154, dec: 19.1825, dLy: 36.7, color: 0xffb070, type: 'K1.5 III 红巨星', brief: '北天最亮的橙红巨星，正以高速穿过银盘，属于一个古老的星流。' },
-  { id: 'capella', name: '五车二（御夫座 α）', group: '邻近恒星', ra: 79.1725, dec: 45.9981, dLy: 42.9, color: 0xffe0a0, type: '双巨星系统', brief: '御夫座主星，肉眼看似一颗，实为两对巨星组成的四合星系统。' },
-  { id: 'aldebaran', name: '毕宿五（金牛座 α）', group: '邻近恒星', ra: 68.9804, dec: 16.5092, dLy: 65.0, color: 0xffa860, type: 'K5 III 橙巨星', brief: '金牛座的「牛眼」，视觉上落在毕星团前方，其实与星团无关，距离只有它的一半。' },
-  { id: 'canopus', name: '老人星（船底座 α）', group: '邻近恒星', ra: 95.9879, dec: -52.6956, dLy: 310.0, color: 0xe8f0ff, type: 'A9 II 亮巨星', brief: '全天第二亮星，南天显著。亮度极高，常被用作航天器导航的基准星。' },
-  { id: 'polaris', name: '北极星（勾陈一）', group: '邻近恒星', ra: 37.9542, dec: 89.2642, dLy: 433.0, color: 0xfff2d0, type: 'F7 Ib 造父变星 · 三合星', brief: '当前最靠近北天极的亮星，也是经典的造父变星，靠光变周期可测宇宙距离。' },
-  { id: 'betelgeuse', name: '参宿四（猎户座 α）', group: '邻近恒星', ra: 88.7929, dec: 7.4069, dLy: 550.0, color: 0xff7040, type: 'M1-2 Ia 红超巨星', brief: '猎户座左肩，直径约为太阳的 900 倍，已到演化末期，未来会以超新星爆发终结。' },
-  { id: 'antares', name: '心宿二（天蝎座 α）', group: '邻近恒星', ra: 247.3519, dec: -26.4319, dLy: 550.0, color: 0xff6a48, type: 'M1.5 Iab 红超巨星', brief: '古称「大火」，色红似火星，西方名意为「火星的对手」，是天蝎座心脏位置的红超巨星。' },
-  { id: 'rigel', name: '参宿七（猎户座 β）', group: '邻近恒星', ra: 78.6346, dec: -8.2017, dLy: 850.0, color: 0xb8d0ff, type: 'B8 Ia 蓝超巨星', brief: '猎户座右脚，实际比参宿四更亮，是银河系里最明亮的蓝超巨星之一。' },
-  { id: 'hyades', name: '毕星团', group: '疏散星团', ra: 66.75, dec: 15.8667, dLy: 153.0, color: 0xffd9a8, type: '疏散星团', brief: '离太阳最近的疏散星团，肉眼可见的 V 字形，与昴星团同属一个古老星流。' },
-  { id: 'pleiades', name: '昴星团 M45（七姐妹）', group: '疏散星团', ra: 56.85, dec: 24.1167, dLy: 444.0, color: 0xa8c8ff, type: '疏散星团 + 反射星云', brief: '肉眼最易辨认的年轻蓝星团，年龄约 1 亿年，周围包裹着蓝色的反射星云。' },
-  { id: 'm7', name: '托勒密星团 M7', group: '疏散星团', ra: 268.4625, dec: -34.7928, dLy: 980.0, color: 0xc8dcff, type: '疏散星团', brief: '公元 130 年托勒密就记录过它，肉眼可见的模糊光斑，位于天蝎座尾端。' },
-  { id: 'm6', name: '蝴蝶星团 M6', group: '疏散星团', ra: 265.0875, dec: -32.2542, dLy: 1600.0, color: 0xc8d8ff, type: '疏散星团', brief: '双筒望远镜里几十颗蓝白恒星排成蝴蝶翅膀，其中一颗橙巨星格外醒目。' },
-  { id: 'peg51', name: '飞马座 51（首颗热木星母星）', group: '系外行星系统', ra: 344.3667, dec: 20.7689, dLy: 50.6, color: 0xffe0a0, type: '类太阳恒星 + 热木星', brief: '1995 年在这里发现人类第一颗绕主序星运行的系外行星，开创系外行星天文学，获 2019 诺贝尔物理学奖。' },
-  { id: 'kepler452', name: '开普勒 452（类地行星系统）', group: '系外行星系统', ra: 296.0042, dec: 44.2775, dLy: 1800.0, color: 0xffe8b8, type: '类太阳恒星 + 超级地球', brief: '「地球 2.0」：行星轨道与恒星辐照都接近地球，位于天鹅座的宜居带内。' },
+  { id: 'proxima', name: '比邻星（半人马座 αC）', group: '邻近恒星', ra: 217.42896, dec: -62.67944, dLy: 4.24, color: 0xff8a6a, radiusSun: 0.154, type: '红矮星 · 耀星', brief: '离太阳最近的恒星。拥有宜居带行星「比邻星 b」，也是「南门二」三合星系统最外层的成员。' },
+  { id: 'alphaCen', name: '南门二（半人马座 α）', group: '邻近恒星', ra: 219.9021, dec: -60.8339, dLy: 4.37, color: 0xffe8b0, radiusSun: 1.22, type: '三合星系统', brief: '全天第三亮星，由两颗类太阳恒星加比邻星组成，是离我们最近的恒星系统。' },
+  { id: 'barnard', name: '巴纳德星', group: '邻近恒星', ra: 269.4521, dec: 4.6933, dLy: 5.96, color: 0xff9a70, radiusSun: 0.196, type: '红矮星', brief: '已知自行速度最快的恒星，每年在天上移动约 10 角秒，也在缓慢向太阳靠近。' },
+  { id: 'sirius', name: '天狼星（大犬座 α）', group: '邻近恒星', ra: 101.2871, dec: -16.7161, dLy: 8.60, color: 0xc8dcff, radiusSun: 1.711, type: 'A1V 主序星 + 白矮星伴星', brief: '全天最亮恒星，蓝白色。伴星天狼 B 是一颗地球大小、质量却接近太阳的白矮星。' },
+  { id: 'procyon', name: '南河三（小犬座 α）', group: '邻近恒星', ra: 114.8254, dec: 5.2250, dLy: 11.46, color: 0xfff0d0, radiusSun: 2.05, type: 'F5 IV-V 亚巨星', brief: '小犬座主星，与天狼星、参宿四构成「冬季大三角」，同样带白矮星伴星。' },
+  { id: 'altair', name: '河鼓二（牛郎星）', group: '邻近恒星', ra: 297.6958, dec: 8.8683, dLy: 16.73, color: 0xd8e8ff, radiusSun: 1.79, type: 'A7V 主序星', brief: '天鹰座 α，与织女星隔银河相望。自转极快（约 9 小时），被甩成明显的扁球形。' },
+  { id: 'vega', name: '织女星（天琴座 α）', group: '邻近恒星', ra: 279.2346, dec: 38.7836, dLy: 25.04, color: 0xc4d8ff, radiusSun: 2.36, type: 'A0V 主序星', brief: '天琴座主星、0 等亮星，曾是（也将再度成为）北极星。周围有尘埃盘，是标准测光基准星。' },
+  { id: 'pollux', name: '北河三（双子座 β）', group: '邻近恒星', ra: 116.3288, dec: 28.0261, dLy: 33.78, color: 0xffc890, radiusSun: 9.06, type: 'K0 III 橙巨星', brief: '双子座最亮星，已确认拥有系外行星，是「亮星带行星」的经典案例。' },
+  { id: 'arcturus', name: '大角星（牧夫座 α）', group: '邻近恒星', ra: 213.9154, dec: 19.1825, dLy: 36.7, color: 0xffb070, radiusSun: 25.4, type: 'K1.5 III 红巨星', brief: '北天最亮的橙红巨星，正以高速穿过银盘，属于一个古老的星流。' },
+  { id: 'capella', name: '五车二（御夫座 α）', group: '邻近恒星', ra: 79.1725, dec: 45.9981, dLy: 42.9, color: 0xffe0a0, radiusSun: 12.0, type: '双巨星系统', brief: '御夫座主星，肉眼看似一颗，实为两对巨星组成的四合星系统。' },
+  { id: 'aldebaran', name: '毕宿五（金牛座 α）', group: '邻近恒星', ra: 68.9804, dec: 16.5092, dLy: 65.0, color: 0xffa860, radiusSun: 45.0, type: 'K5 III 橙巨星', brief: '金牛座的「牛眼」，视觉上落在毕星团前方，其实与星团无关，距离只有它的一半。' },
+  { id: 'canopus', name: '老人星（船底座 α）', group: '邻近恒星', ra: 95.9879, dec: -52.6956, dLy: 310.0, color: 0xe8f0ff, radiusSun: 71.0, type: 'A9 II 亮巨星', brief: '全天第二亮星，南天显著。亮度极高，常被用作航天器导航的基准星。' },
+  { id: 'polaris', name: '北极星（勾陈一）', group: '邻近恒星', ra: 37.9542, dec: 89.2642, dLy: 433.0, color: 0xfff2d0, radiusSun: 46.0, type: 'F7 Ib 造父变星 · 三合星', brief: '当前最靠近北天极的亮星，也是经典的造父变星，靠光变周期可测宇宙距离。' },
+  { id: 'betelgeuse', name: '参宿四（猎户座 α）', group: '邻近恒星', ra: 88.7929, dec: 7.4069, dLy: 550.0, color: 0xff7040, radiusSun: 764.0, type: 'M1-2 Ia 红超巨星', brief: '猎户座左肩，直径约为太阳的 900 倍，已到演化末期，未来会以超新星爆发终结。' },
+  { id: 'antares', name: '心宿二（天蝎座 α）', group: '邻近恒星', ra: 247.3519, dec: -26.4319, dLy: 550.0, color: 0xff6a48, radiusSun: 680.0, type: 'M1.5 Iab 红超巨星', brief: '古称「大火」，色红似火星，西方名意为「火星的对手」，是天蝎座心脏位置的红超巨星。' },
+  { id: 'rigel', name: '参宿七（猎户座 β）', group: '邻近恒星', ra: 78.6346, dec: -8.2017, dLy: 850.0, color: 0xb8d0ff, radiusSun: 79.0, type: 'B8 Ia 蓝超巨星', brief: '猎户座右脚，实际比参宿四更亮，是银河系里最明亮的蓝超巨星之一。' },
+  { id: 'hyades', name: '毕星团', group: '疏散星团', ra: 66.75, dec: 15.8667, dLy: 153.0, color: 0xffd9a8, shape: 'cluster', seed: 1530, type: '疏散星团', brief: '离太阳最近的疏散星团，肉眼可见的 V 字形，与昴星团同属一个古老星流。' },
+  { id: 'pleiades', name: '昴星团 M45（七姐妹）', group: '疏散星团', ra: 56.85, dec: 24.1167, dLy: 444.0, color: 0xa8c8ff, shape: 'cluster', seed: 4501, type: '疏散星团 + 反射星云', brief: '肉眼最易辨认的年轻蓝星团，年龄约 1 亿年，周围包裹着蓝色的反射星云。' },
+  { id: 'm7', name: '托勒密星团 M7', group: '疏散星团', ra: 268.4625, dec: -34.7928, dLy: 980.0, color: 0xc8dcff, shape: 'cluster', seed: 7001, type: '疏散星团', brief: '公元 130 年托勒密就记录过它，肉眼可见的模糊光斑，位于天蝎座尾端。' },
+  { id: 'm6', name: '蝴蝶星团 M6', group: '疏散星团', ra: 265.0875, dec: -32.2542, dLy: 1600.0, color: 0xc8d8ff, shape: 'cluster', seed: 6001, type: '疏散星团', brief: '双筒望远镜里几十颗蓝白恒星排成蝴蝶翅膀，其中一颗橙巨星格外醒目。' },
+  { id: 'peg51', name: '飞马座 51（首颗热木星母星）', group: '系外行星系统', ra: 344.3667, dec: 20.7689, dLy: 50.6, color: 0xffe0a0, radiusSun: 1.24, type: '类太阳恒星 + 热木星', brief: '1995 年在这里发现人类第一颗绕主序星运行的系外行星，开创系外行星天文学，获 2019 诺贝尔物理学奖。' },
+  { id: 'kepler452', name: '开普勒 452（类地行星系统）', group: '系外行星系统', ra: 296.0042, dec: 44.2775, dLy: 1800.0, color: 0xffe8b8, radiusSun: 1.11, type: '类太阳恒星 + 超级地球', brief: '「地球 2.0」：行星轨道与恒星辐照都接近地球，位于天鹅座的宜居带内。' },
 ];
 
 // ---------- 深空天体（只收录坐标与距离有可靠公开来源者） ----------
@@ -251,6 +255,11 @@ const nearbyBodies = NEARBY_STARS.map((o) => {
     dLy: o.dLy,
     tier: tierForDistance(o.dLy),
     navGroup: o.group,
+    // 真实恒星：放大后显示球体（半径按 radiusSun 相对缩放）；
+    // 疏散星团不是恒星，复用已有的程序化点云星团展示物。
+    ...(o.shape === 'cluster'
+      ? { deepSky: { kind: 'cluster', seed: o.seed } }
+      : { radiusSun: o.radiusSun ?? 1 }),
     info: {
       类型: o.type,
       距离: `约 ${o.dLy < 10 ? o.dLy.toFixed(2) : Math.round(o.dLy)} 光年`,
@@ -343,11 +352,14 @@ export default {
       tier: tierForDistance(8.2 * LY_PER_KPC),
       color: 0xffd9a0,
       glowSize: 5,
+      // 远景里仍是一颗亮星锚点；真正放大到它身边时，显示的应是黑洞 + 吸积盘
+      // （复用 makeBlackHoleShowcase），而不是一颗恒星球体。
+      deepSky: { kind: 'blackhole', seed: 8100 },
       info: {
         类型: '超大质量黑洞',
         质量: '约 4.3×10⁶ 太阳质量',
         位置: '银河系动力学中心（银心）',
-        简介: '几乎全部银河系恒星都绕着它公转。此处用一颗亮星作视觉锚点，真实中心是一个几乎不可见、吞噬光的黑洞。',
+        简介: '几乎全部银河系恒星都绕着它公转。银河系尺度上用一颗亮星作视觉锚点，放大后可以看到黑洞与吸积盘；真实中心几乎不可见、会吞噬光。',
       },
     },
     {
@@ -363,6 +375,7 @@ export default {
       tier: SCALE_TIERS.length - 1,
       color: 0xfff0c0,
       glowSize: 0.42,
+      radiusSun: 1,            // 近景球体的大小基准：其它恒星都相对太阳缩放
       childSystem: 'solar.html',
       childSystemLabel: '太阳系',
       info: {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>天体直达外链清单</title>
+<title>外链直达清单 · 页面 / 层级 / 天体</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -45,12 +45,12 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>天体直达外链清单</h1>
-  <p class="lead">每个天体一条链接：打开即聚焦该天体、显示信息卡、冻结公转，不需要再点菜单。<br>
+  <h1>外链直达清单</h1>
+  <p class="lead">三层链接：<b>3D 页面</b>（介绍太阳系 / 银河系这类整页）、<b>宇宙层级节点</b>（可观测宇宙、本星系群、仙女座星系…）、<b>单个天体</b>（打开即聚焦、信息卡展开、镜头跟着天体继续运动）。<br>
      下面的完整地址自动套用当前站点前缀 <span class="base" id="base"></span>，本地与线上部署通用。</p>
 
   <div class="toolbar">
-    <input id="q" type="search" placeholder="搜索天体名或 ID，例如：地球 / europa / 昴星团">
+    <input id="q" type="search" placeholder="搜索名称或 ID，例如：银河系 / milkyway / europa / 昴星团">
     <select id="page"><option value="">全部页面</option></select>
     <span class="count" id="count"></span>
   </div>
@@ -59,10 +59,12 @@
   <div class="tips">
     <h2>参数说明</h2>
     <ul>
-      <li><code>?body=&lt;ID&gt;</code>：天体直达。ID 全局唯一时可直接用短名；跨页同名用 <code>页面:ID</code>（如 <code>jupiter:jupiter</code>）。</li>
-      <li><code>go.html?body=&lt;ID&gt;</code>：万能入口，只记 ID 即可，自动跳到该天体所在页面。</li>
-      <li><code>&amp;embed=1</code>：精简嵌入模式，隐藏导航、菜单、控制面板，只留天体特写与信息卡；点「复制嵌入代码」已自动带上。</li>
+      <li><b>页面级</b>：<code>galaxy.html</code> / <code>solar.html</code> 直接打开整页；也可用 <code>go.html?page=galaxy</code>。</li>
+      <li><b>层级节点</b>：<code>cosmos.html?node=localgroup</code>（本星系群）或万能入口 <code>go.html?node=milkyway</code>（银河系）。注册表里 28 个节点都有独立链接，新增星系自动进表。</li>
+      <li><code>?body=&lt;ID&gt;</code>：天体直达。ID 全局唯一时可直接用短名；跨页同名用 <code>页面:ID</code>（如 <code>jupiter:jupiter</code>）。<code>go.html?body=&lt;ID&gt;</code> 只记 ID 即可。</li>
+      <li><code>&amp;embed=1</code>：精简嵌入模式，隐藏导航、菜单、控制面板；点「复制嵌入代码」已自动带上。</li>
       <li><code>&amp;lang=en</code>：英文界面。<code>#earth</code> 形式的锚点同样可用，且可在不刷新页面的情况下切换天体。</li>
+      <li>银河系页的恒星远看只是一个点，<b>直达链接会自动把镜头推进到近景</b>，看到球面与日冕；继续滚轮放大也能得到同样效果。</li>
       <li>链接只依赖域名前缀之后的路径，换域名不需要改；机器可读版本见 <a href="./links.json">links.json</a>。</li>
     </ul>
   </div>
@@ -83,34 +85,78 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const pageSel = document.getElementById('page');
 for (const p of DATA.pages) {
   const o = document.createElement('option');
-  o.value = p.file; o.textContent = `${p.name}（${p.count}）`;
+  o.value = p.file; o.textContent = `${p.name}（${p.count} 个天体）`;
   pageSel.appendChild(o);
 }
+const cosmosOpt = document.createElement('option');
+cosmosOpt.value = 'cosmos.html';
+cosmosOpt.textContent = `宇宙层级页（${DATA.nodes.filter((n) => n.page === 'cosmos.html').length} 个节点）`;
+pageSel.appendChild(cosmosOpt);
 
+const listEl = document.getElementById('list');
 const rows = [];
+function addSection(title) {
+  const sec = document.createElement('section');
+  sec.innerHTML = `<div class="group">${esc(title)}</div>
+    <table><thead><tr><th>名称</th><th>ID / 参数</th><th>直达链接</th><th>操作</th></tr></thead><tbody></tbody></table>`;
+  listEl.appendChild(sec);
+  return sec.querySelector('tbody');
+}
+function addRow(tb, item) {
+  const url = full(item.url);
+  const tr = document.createElement('tr');
+  tr.dataset.hay = item.hay.toLowerCase();
+  tr.dataset.page = item.page || '';
+  tr.innerHTML = `<td class="name">${esc(item.name)}</td>
+    <td class="id">${esc(item.id)}</td>
+    <td><a class="url" href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></td>
+    <td class="acts"><button data-copy="${esc(url)}">复制链接</button><button data-copy-iframe="${esc(url)}">复制嵌入代码</button></td>`;
+  rows.push(tr);
+  tb.appendChild(tr);
+}
+
+// 1) 页面级：介绍「太阳系 / 银河系」这类整页外链
+const pageTb = addSection(`3D 页面直达 · ${DATA.pages.length} 个页面`);
+for (const p of DATA.pages) {
+  addRow(pageTb, {
+    name: `${p.name}（整页）`,
+    id: `page=${p.key}`,
+    url: p.url,
+    page: p.file,
+    hay: `${p.name} ${p.key} ${p.file} ${p.nodeId ?? ''} 页面 整页`,
+  });
+}
+
+// 2) 层级节点：注册表里的 28 个节点，包括银河系与所有上级 / 同级星系
+const nodeTb = addSection(`宇宙层级节点直达 · ${DATA.nodes.length} 个节点`);
+for (const n of DATA.nodes) {
+  addRow(nodeTb, {
+    name: `${n.name} · ${n.en}（${n.kindName} / ${n.detailName}）`,
+    id: `node=${n.id}`,
+    url: n.url,
+    page: n.page,
+    hay: `${n.name} ${n.en} ${n.id} ${n.kindName} ${n.detailName} ${n.scale}`,
+  });
+}
+
+// 3) 天体级：按页面分组，打开即聚焦
 for (const p of DATA.pages) {
   const items = DATA.bodies.filter((b) => b.page === p.file);
   if (!items.length) continue;
-  const sec = document.createElement('section');
-  sec.innerHTML = `<div class="group">${esc(p.name)} · ${esc(p.file)}</div>
-    <table><thead><tr><th>天体</th><th>ID</th><th>直达链接</th><th>操作</th></tr></thead><tbody></tbody></table>`;
-  const tb = sec.querySelector('tbody');
+  const tb = addSection(`${p.name} · ${p.file}（${items.length} 个天体）`);
   for (const b of items) {
-    const url = full(b.url);
-    const token = b.short || b.key;
-    const tr = document.createElement('tr');
-    tr.dataset.hay = `${b.name} ${b.id} ${b.key} ${p.name}`.toLowerCase();
-    tr.dataset.page = b.page;
-    tr.innerHTML = `<td class="name">${esc(b.name)}</td>
-      <td class="id">${esc(token)}</td>
-      <td><a class="url" href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></td>
-      <td class="acts"><button data-copy="${esc(url)}">复制链接</button><button data-copy-iframe="${esc(url)}">复制嵌入代码</button></td>`;
-    rows.push(tr);
-    tb.appendChild(tr);
+    addRow(tb, {
+      name: b.name,
+      id: b.short || b.key,
+      url: b.url,
+      page: b.page,
+      hay: `${b.name} ${b.id} ${b.key} ${p.name}`,
+    });
   }
-  document.getElementById('list').appendChild(sec);
 }
-document.getElementById('count').textContent = `共 ${DATA.bodies.length} 个天体 / ${DATA.pages.length} 个页面`;
+const total = rows.length;
+document.getElementById('count').textContent =
+  `共 ${total} 条链接 / ${DATA.bodies.length} 个天体 · ${DATA.pages.length} 个页面 · ${DATA.nodes.length} 个层级节点`;
 
 async function copy(text, btn) {
   try { await navigator.clipboard.writeText(text); }
@@ -145,7 +191,7 @@ function filter() {
   for (const sec of document.querySelectorAll('#list section')) {
     sec.style.display = [...sec.querySelectorAll('tbody tr')].some((r) => r.style.display !== 'none') ? '' : 'none';
   }
-  document.getElementById('count').textContent = `显示 ${shown} / ${DATA.bodies.length} 个天体`;
+  document.getElementById('count').textContent = `显示 ${shown} / ${total} 条链接`;
 }
 document.getElementById('q').addEventListener('input', filter);
 pageSel.addEventListener('change', filter);

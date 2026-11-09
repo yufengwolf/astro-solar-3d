@@ -18,13 +18,20 @@ src/
     earth-moon.js / mars.js / jupiter.js / ...     各子系统配置
   data/
     bodies-real.js 真实天体物理参数（唯一数据源）
+    deeplinks.js / deeplinks.json   由生成器产出的三层外链注册表
   bodies.js        天体/轨道环构造 + 开普勒方程
   scale.js         尺度换算（纯函数，不依赖 three，自检脚本直接复用）
+  universe.js      宇宙层级注册表（导航 / 页面反查 / 站内链接的唯一真相源）
+  deeplinks.js     天体 ID 解析与规范链接生成
+  follow.js        跟随镜头的共转数学（纯函数）
+  star-portrait.js 恒星近景 LOD：程序化光球 / 色球 / 日冕 + 距离驱动显隐数学
+  galaxy-portrait.js / portraits.js   星系自身形态
   main.js          场景编排：相机、光照、后处理、GUI、拾取、动画
   style.css
-static/            publicDir：运行时按相对路径加载的 glb（火星卫星、小行星包）
-scripts/sync.mjs         一键构建 + 复制 dist 到本地静态站目录（可选）
-scripts/check-scale.mjs  尺度自检（改动 scale/camera 后务必跑）
+static/            publicDir：运行时按相对路径加载的 glb + links.html / links.json
+scripts/gen-deeplinks.mjs  生成 pages / nodes / bodies 三层外链清单（prebuild 自动跑）
+scripts/check-*.mjs        尺度 / 彗星 / 宇宙层级 / 外链 / 跟随 / 恒星近景自检
+scripts/sync.mjs           一键构建 + 复制 dist 到本地静态站目录（可选）
 vite.base.js      多入口构建配置生成器（ENTRIES 注册表在这里）
 vite.config.js    全量构建
 vite.*.config.js  单系统构建
@@ -317,6 +324,35 @@ npm run check:comet   # 用生产代码验证：彗尾是否严格背离太阳�
 
 > 彗星轨道受行星摄动与非引力效应（喷流反冲）影响，要素**随历元变化**，
 > 这里的量级可靠但不作精确预报；周期一律由半长轴经开普勒第三定律推得（P = a^1.5 年），与行星口径一致。
+
+---
+
+## URL 契约与恒星近景 LOD
+
+三层外链都由 `scripts/gen-deeplinks.mjs` 生成，别手工编辑 `src/data/deeplinks.*`：
+
+| 粒度 | 参数 | 落地 |
+| --- | --- | --- |
+| 整页 | `?page=<key>`（`go.html`）或直接 `<页面>.html` | `pages[]`，9 个 3D 页面 |
+| 层级节点 | `?node=<id>`（`go.html` / `cosmos.html`） | `nodes[]`，由 `src/universe.js` 的 `NODES` 全量展开，当前 28 个 |
+| 天体 | `?body=<id>` / `#<id>` / `?focus=<id>` | `bodies[]`，130 条；同名跨页用 `页面:ID` 消歧 |
+
+`go.html` 的 `body` 优先于 `node` 优先于 `page`，`lang` / `embed` / `scale` / `debug` 等参数原样透传。清单版本为 `2`（`pages` / `nodes` / `bodies`）；只加天体时改 `src/systems/*.js`，只加星系时改 `NODES`，跑一次 `npm run gen:links` 三层都会更新，`npm run check:deeplinks` 会比对注册表防止漏项。
+
+银河系页的恒星是**距离驱动 LOD**，与「是否选中」无关：
+
+- 远景：`fixedSize: 0.07` 的纯色小球 + 光晕，所有 `starPortraits` 默认 `visible = false`；
+- 近景：`updateStarPortraits()` 每帧算 `a = portraitOpacity(相机到恒星距离, tierCamDist(当前档))`，`a > 0.01` 才显示球体，球径 `portraitRadius(def.size, tierFactorOf(tier), def.radiusSun, distance)`，并按 `a` 淡入；
+- `?body=` / `hashchange` 落到恒星时 `setStarCloseup()` 把相机推进到 `0.45 × 档位取景距离`，保证外部 iframe 打开就能看到球面，菜单点击仍保留档位全景；
+- 疏散星团 / 星云 / 超新星遗迹 / 黑洞走 `deepSky.kind` 的既有展示物，不挂恒星球；
+- `?debug=1` 暴露 `portraitCount` 与 `closeups`，供 CDP 真机验证显隐与球径。
+
+改动后至少跑：
+
+```bash
+npm run check && npm run check:comet && npm run check:universe \
+  && npm run check:deeplinks && npm run check:follow && npm run check:stars && npm run build
+```
 
 ---
 

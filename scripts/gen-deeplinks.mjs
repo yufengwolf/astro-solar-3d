@@ -11,11 +11,18 @@
  *   static/links.json        对外公开的机器可读清单（Vite publicDir → dist）
  *   static/links.html        可搜索、一键复制的外链工具页（同上）
  *
+ * 清单分三层，缺一不可：
+ *   pages[] 9 个 3D 页面本身（「介绍太阳系 / 银河系」这类整页外链）
+ *   nodes[] 28 个宇宙层级节点（银河系、本星系群、仙女座、可观测宇宙…）
+ *   bodies[] 130 个天体（打开即聚焦的特写）
+ * 以前只有 bodies，于是「银河系」这种页面级目标根本查不到链接。
+ *
  * 用法：npm run gen:links（prebuild / predev 会自动跑）
  */
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { NODES, LEVELS, DETAILS, resolveCurrentId } from '../src/universe.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '..');
@@ -73,7 +80,13 @@ const pages = [];
 for (const [file, page] of Object.entries(PAGES)) {
   const sys = (await import(pathToFileURL(resolve(TMP, file)).href)).default;
   const pageKey = page.replace(/\.html$/, '');
-  pages.push({ key: pageKey, file: page, name: sys.label, count: 0 });
+  // 页面级直达：整页外链（介绍「太阳系」「银河系」时用），并给出对应的层级节点 ID
+  pages.push({
+    key: pageKey, file: page, name: sys.label, count: 0,
+    url: page,
+    goUrl: `go.html?page=${encodeURIComponent(pageKey)}`,
+    nodeId: resolveCurrentId('', '/' + page),
+  });
 
   const push = (b, extra = {}) => {
     bodies.push({
@@ -106,10 +119,34 @@ for (const b of bodies) {
   delete b.pageKey;
 }
 
+// 宇宙层级节点：注册表里每一个节点都必须有一条稳定外链。
+// 银河系 / 太阳系 / 各卫星系统映射到专用 3D 页，其余走 cosmos.html?node=。
+const nodes = NODES.map((n) => {
+  const file = n.url.split('?')[0];
+  return {
+    id: n.id,
+    name: n.zh,
+    en: n.en,
+    kind: n.kind,
+    kindName: LEVELS[n.kind]?.[0] ?? n.kind,
+    detail: n.detail,
+    detailName: DETAILS[n.detail]?.[0] ?? n.detail,
+    page: file,
+    url: n.url,
+    goUrl: `go.html?node=${encodeURIComponent(n.id)}`,
+    scale: n.scaleZh,
+    spanLy: n.spanLy,
+    parent: n.parent ?? null,
+    // 有天体级清单的页面（3D 页）可以直接一并给出该页的天体数，便于工具页提示
+    bodies: bodies.filter((b) => b.page === file).length,
+  };
+});
+
 const payload = {
-  version: 1,
-  note: '由 scripts/gen-deeplinks.mjs 生成，勿手工编辑。body 参数为全局唯一短名或 页面:ID。',
+  version: 2,
+  note: '由 scripts/gen-deeplinks.mjs 生成，勿手工编辑。body 参数为全局唯一短名或 页面:ID；node 参数为宇宙层级节点 ID；page 参数为 3D 页面键名。',
   pages,
+  nodes,
   bodies,
 };
 const json = JSON.stringify(payload, null, 2) + '\n';
@@ -127,4 +164,4 @@ writeFileSync(
 );
 
 rmSync(TMP, { recursive: true, force: true });
-console.log(`深链清单已生成：${bodies.length} 个天体 / ${pages.length} 个页面 → src/data/deeplinks.json、static/links.{json,html}`);
+console.log(`深链清单已生成：${bodies.length} 个天体 / ${pages.length} 个 3D 页面 / ${nodes.length} 个层级节点 → src/data/deeplinks.json、static/links.{json,html}`);

@@ -10,6 +10,7 @@ _export/
 # 自检脚本的中间产物
 src/.check-tmp/
 src/.check-links-tmp/
+src/.check-stars-tmp/
 src/.gen-tmp/
 
 # 天体直达外链清单：由 gen:links 在 prebuild / predev 时生成
