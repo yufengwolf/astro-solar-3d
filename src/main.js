@@ -12,7 +12,8 @@ import { createCometParts, updateComet, updateCometViewport, cometGlobals } from
 import { buildCosmosField } from './cosmos-field.js';
 import { buildGalaxyPortrait } from './galaxy-portrait.js';
 import {
-  createStarPortrait, portraitRadius, portraitOpacity, tierFactorOf,
+  createStarPortrait, portraitRadius, portraitOpacity, selectStarPortrait,
+  UNITS_PER_LY, PORTRAIT_CLOSEUP_LY,
 } from './star-portrait.js';
 import {
   resolveCurrentId, parentHref, childHref,
@@ -938,10 +939,16 @@ export function start(system) {
     // 到小档仍是 3px 的针尖，等于「什么都看不见」。用 0.8 次幂让它逐档
     // 缓慢变大（占屏 ∝ 10^0.2i，第 4 档约 6 倍），既看得清又绝不会膨胀成大球。
     const f = Math.pow(10, -i * 0.8);
+    // 银河系的恒星锚点例外：严格 10^-i 同比缩小 = 占屏尺寸恒定。上面那个
+    // 0.8 次幂会让点逐档膨胀（第 5 档约 6 倍），1 万光年档里挤在太阳附近的
+    // 十几个恒星光晕就会叠成一团白斑。锚点在任何档位都该只是「一个点」，
+    // 真正的球面交给 star-portrait 在 1 光年内单独显形。
+    const fPoint = Math.pow(10, -i);
     for (const [, node] of byId) {
-      if (node.mesh) node.mesh.scale.setScalar((node.def?.size ?? 0.07) * f);
-      if (node.halo) node.halo.scale.setScalar((node.def?.glowSize ?? 0.4) * f);
-      if (node.pick) node.pick.scale.setScalar((node.def?.pickSize ?? 0.6) * f);
+      const k = (node.def?.star && node.def?.fixedSize) ? fPoint : f;
+      if (node.mesh) node.mesh.scale.setScalar((node.def?.size ?? 0.07) * k);
+      if (node.halo) node.halo.scale.setScalar((node.def?.glowSize ?? 0.4) * k);
+      if (node.pick) node.pick.scale.setScalar((node.def?.pickSize ?? 0.6) * k);
     }
     for (const [, sc] of deepSkyShowcases) {
       const boost = sc.visible ? 3.0 : 1;
@@ -956,11 +963,15 @@ export function start(system) {
     if (!TIERS) return;
     const span = TIERS[i].spanLy;
     const visibleGroups = new Set();
+    // 跟随 / 选中的天体要放行：1 光年档的窗口只有 [0.005, 1.5] 光年，会把
+    // 4.24 光年外的比邻星过滤掉，但外链直达时镜头就贴在它旁边。
+    // 只放行这**一颗**，不会让大档里挤成一堆的邻近恒星重新涌回来。
+    const forceId = follow?.id ?? selected?.id ?? null;
     for (const [sid, node] of byId) {
       const dLy = node.def?.dLy;
       // 下限取视野的 0.5%：比这更近的天体在该档里必然与太阳/彼此重合，
       // 显示出来只会误导（例如 10 万光年档列出 4 光年的比邻星）。
-      const show = dLy == null || dLy === 0 ||
+      const show = sid === forceId || dLy == null || dLy === 0 ||
         (dLy >= span * 0.005 && dLy <= span * 1.5);
       if (node.group) node.group.visible = show;
       const row = navRows.get(sid);
@@ -1071,22 +1082,34 @@ export function start(system) {
     applyTierScale(currentTier);
   }
 
-  // ---------- 恒星近景 LOD：远景一个点，镜头贴近才长出球体 ----------
-  // 判定只依赖「相机到恒星的距离 / 当前档位取景距离」，不看是否选中，
-  // 于是滚轮一路放大任意一颗恒星都会看到它；全景档里所有球一律不可见。
+  // ---------- 恒星近景 LOD：大尺度永远只有点，1 光年内最多一颗球 ----------
+  // 上一版用「相机距离 / 本档取景距离」的相对比例判定，结果 1 万光年档稍一滚轮
+  // 所有恒星就一起淡入，且球径随粗档膨胀到几百光年，十几颗球叠成一团。
+  // 现在按 star-portrait.js 的三条硬规则：档位 ≤ 1 光年、相机距恒星 < 1 光年、
+  // 每帧只留离相机最近的一颗（恒星彼此至少隔几光年，不可能同时看见两个球面）。
   const _portraitWp = new THREE.Vector3();
+  const _portraitCandidates = [];
   function updateStarPortraits(dtSec) {
     if (!starPortraits.size || !TIERS) return;
-    const base = tierCamDist(currentTier);
-    const f = tierFactorOf(currentTier);
-    for (const [, p] of starPortraits) {
-      if (!p.node.group.visible) { p.group.visible = false; continue; }
+    _portraitCandidates.length = 0;
+    for (const [id, p] of starPortraits) {
+      if (!p.node.group.visible) {
+        _portraitCandidates.push({ id, dLy: Infinity, dUnits: Infinity, visible: false });
+        continue;
+      }
       p.node.group.getWorldPosition(_portraitWp);
-      const d = camera.position.distanceTo(_portraitWp);
-      const a = portraitOpacity(d, base);
+      const dUnits = camera.position.distanceTo(_portraitWp);
+      // 场景单位是 kpc，除以「每光年多少单位」得到真实光年数
+      _portraitCandidates.push({ id, dLy: dUnits / UNITS_PER_LY, dUnits, visible: true });
+    }
+    const winner = selectStarPortrait(_portraitCandidates, TIERS[currentTier].spanLy);
+    for (const c of _portraitCandidates) {
+      const p = starPortraits.get(c.id);
+      if (c.id !== winner) { p.group.visible = false; continue; }
+      const a = portraitOpacity(c.dLy);
       if (a < 0.01) { p.group.visible = false; continue; }
       p.group.visible = true;
-      p.group.scale.setScalar(portraitRadius(p.def.size ?? 0.07, f, p.def.radiusSun, d));
+      p.group.scale.setScalar(portraitRadius(p.def.radiusSun, c.dUnits, UNITS_PER_LY));
       p.sphere.material.opacity = a;
       p.sphere.rotation.y += dtSec * 0.05;   // 光球缓慢自转，特写里不至于死板
       // 加法混合下 opacity 不可靠，色球 / 日冕直接按可见阈值开关
@@ -1094,14 +1117,18 @@ export function start(system) {
     }
   }
 
-  /** 外链直达 / hash 切换时把镜头推进到球体已显形的距离，别让外链只落在一个针尖上。 */
+  /** 外链 / hash 直达：强制落到 1 光年档、镜头停在 0.45 光年外，打开就看见球面。 */
   function setStarCloseup(def, obj) {
     if (!TIERS || !starPortraits.has(def.id)) return;
     const wp = new THREE.Vector3();
     obj.getWorldPosition(wp);
+    const inner = TIERS.length - 1;
+    // 只有最内档允许球体；顺带把观察焦点从太阳移到这颗恒星本身。
+    if (currentTier !== inner) applyTier(inner, { instant: true, focus: wp });
+    else updateTierVisibility(inner);  // 让被 dLy 窗口过滤掉的目标重新可见
     const dir = camera.position.clone().sub(controls.target);
     if (dir.lengthSq() < 1e-18) dir.set(0, 0.42, 1);
-    const want = dir.normalize().multiplyScalar(tierCamDist(currentTier) * 0.45);
+    const want = dir.normalize().multiplyScalar(PORTRAIT_CLOSEUP_LY * UNITS_PER_LY);
     controls.target.copy(wp);
     camera.position.copy(wp).add(want);
     camera.lookAt(wp);
@@ -1879,11 +1906,18 @@ export function start(system) {
           followMotion: settings.followMotion,
           camera: camera.position.toArray(),
           target: controls.target.toArray(),
-          // 恒星近景 LOD：真实浏览器 / CDP 用来验证「放大才显形」
+          // 恒星近景 LOD：真实浏览器 / CDP 用来验证「大档零球、小档最多一颗」
           portraitCount: starPortraits.size,
+          portraitSpanLy: TIERS?.[currentTier]?.spanLy ?? null,
+          visiblePortraits: [...starPortraits.values()].filter((p) => p.group.visible).length,
           closeups: [...starPortraits.entries()]
             .filter(([, p]) => p.group.visible)
-            .map(([id, p]) => ({ id, radius: p.group.scale.x, opacity: p.sphere.material.opacity })),
+            .map(([id, p]) => ({
+              id,
+              radius: p.group.scale.x,
+              radiusLy: p.group.scale.x / UNITS_PER_LY,
+              opacity: p.sphere.material.opacity,
+            })),
         };
       },
     };

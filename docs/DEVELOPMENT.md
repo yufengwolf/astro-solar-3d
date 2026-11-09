@@ -24,7 +24,7 @@ src/
   universe.js      宇宙层级注册表（导航 / 页面反查 / 站内链接的唯一真相源）
   deeplinks.js     天体 ID 解析与规范链接生成
   follow.js        跟随镜头的共转数学（纯函数）
-  star-portrait.js 恒星近景 LOD：程序化光球 / 色球 / 日冕 + 距离驱动显隐数学
+  star-portrait.js 恒星近景 LOD：程序化光球 / 色球 / 日冕 + 1 光年档门槛与唯一候选数学
   galaxy-portrait.js / portraits.js   星系自身形态
   main.js          场景编排：相机、光照、后处理、GUI、拾取、动画
   style.css
@@ -339,13 +339,15 @@ npm run check:comet   # 用生产代码验证：彗尾是否严格背离太阳�
 
 `go.html` 的 `body` 优先于 `node` 优先于 `page`，`lang` / `embed` / `scale` / `debug` 等参数原样透传。清单版本为 `2`（`pages` / `nodes` / `bodies`）；只加天体时改 `src/systems/*.js`，只加星系时改 `NODES`，跑一次 `npm run gen:links` 三层都会更新，`npm run check:deeplinks` 会比对注册表防止漏项。
 
-银河系页的恒星是**距离驱动 LOD**，与「是否选中」无关：
+恒星近景是**绝对尺度 LOD**，与「是否选中」无关，但受三条硬规则约束：
 
-- 远景：`fixedSize: 0.07` 的纯色小球 + 光晕，所有 `starPortraits` 默认 `visible = false`；
-- 近景：`updateStarPortraits()` 每帧算 `a = portraitOpacity(相机到恒星距离, tierCamDist(当前档))`，`a > 0.01` 才显示球体，球径 `portraitRadius(def.size, tierFactorOf(tier), def.radiusSun, distance)`，并按 `a` 淡入；
-- `?body=` / `hashchange` 落到恒星时 `setStarCloseup()` 把相机推进到 `0.45 × 档位取景距离`，保证外部 iframe 打开就能看到球面，菜单点击仍保留档位全景；
+- 远景：`fixedSize: 0.07` 的纯色点 + 光晕，所有 `starPortraits` 默认 `visible = false`；`applyTierScale()` 对这些锚点用严格 `10^-i` 同比缩小，占屏恒定，放大也不会膨胀成白斑；
+- 门槛：只有 `TIERS[currentTier].spanLy <= 1`（1 光年档）且相机距某颗恒星 `< 1 光年` 时才允许球体。1 万光年档连 `controls.minDistance` 都是上千光年，物理上不可能触发（旧版按「相机距离 ÷ 本档取景距离」的相对比例判定，稍一滚轮所有恒星就一起淡入并互相重叠）；
+- 唯一性：`updateStarPortraits()` 每帧把候选 `{ id, dLy }` 交给 `selectStarPortrait()`，只返回离相机最近的一颗，其余一律 `visible = false`。比邻星与南门二只隔约 0.21 光年，实测确有两颗同时进入 1 光年内；
+- 球径：`portraitRadius(radiusSun, distance, UNITS_PER_LY)` 绝对封顶 0.05 光年，与档位系数无关；`portraitOpacity(dLy)` 在 1 光年为 0、0.55 光年为 1；
+- `?body=` / `hashchange` 落到恒星时 `setStarCloseup()` 强制切到最内档、把相机放到 0.45 光年外，并让该天体跳过 `dLy` 可见性窗口（`updateTierVisibility` 的 `forceId`），否则 4.24 光年外的比邻星会被 1 光年档过滤掉；菜单点击仍保留所在档位；
 - 疏散星团 / 星云 / 超新星遗迹 / 黑洞走 `deepSky.kind` 的既有展示物，不挂恒星球；
-- `?debug=1` 暴露 `portraitCount` 与 `closeups`，供 CDP 真机验证显隐与球径。
+- `?debug=1` 暴露 `portraitSpanLy` / `visiblePortraits` / `closeups[].radiusLy`，供 CDP 真机验证「大档零球、小档最多一颗」。
 
 改动后至少跑：
 

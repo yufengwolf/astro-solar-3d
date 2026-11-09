@@ -1,23 +1,37 @@
 /**
  * 恒星近景 LOD —— 太阳系以外天体「放大之后长什么样」。
  *
- * 分尺度原则（与 readme 的「远景是点 / 特写有形态」一致）：
- *   · 银河系全景档：恒星仍然只是 fixedSize=0.07 的一个点 + 光晕，绝不夸大成球；
- *   · 镜头真正靠近它（滚轮一路放大，或 ?body= 外链直达特写）时，才在**同一个
- *     世界坐标**上浮出一颗球体：程序化米粒组织光球 + 按光谱色着色 + 色球 / 日冕。
- *     这就是「用类似太阳的模型去建立」——球体 + 自发光表面 + 外层柔光，
- *     不需要为每颗恒星单独建模或贴图。
+ * 分尺度原则（与 readme 的「远景是点 / 特写有形态」一致）。这里有三条硬规则，
+ * 都是为了修掉上一版「1 万光年档稍微放大就冒出一堆互相重叠的球」：
  *
- * 球径只表达**相对大小**：真实半径（太阳半径为单位）取 size-of-space
- * (src/data/objects.ts) 与常用恒星参数表，用对数压缩，让红超巨星明显更大但
- * 不至于比红矮星大几千倍把画面撑爆。它不参与银河系定位，也不改变档位尺度。
+ *  1. **绝对尺度门槛**：只有当前档位视野 ≤ 1 光年，且相机距该恒星 < 1 光年时，
+ *     才允许出现球体。档位取景距离随每档缩小 10×，1 万光年档连能缩到的最近
+ *     距离都是上千光年 —— 物理上根本不可能触发，大尺度上永远是点。
+ *     旧版只看「相机距离 / 本档取景距离」的相对比例，于是任何档位稍一滚轮
+ *     所有恒星就集体淡入，且球径按 10^(-0.8i) 随粗档膨胀到几百光年。
+ *  2. **一帧最多一颗球**：恒星彼此至少相距几光年（最近的比邻星—南门二也隔
+ *     约 0.21 光年），1 光年视野装不下第二颗。候选里只挑离相机最近的一颗。
+ *  3. **球径绝对封顶 0.05 光年**（直径 0.1 光年），比最近恒星对间距还小，
+ *     不随档位系数放大；只按真实半径（太阳半径为单位）表达相对大小。
  *
- * 显隐完全由「相机到该恒星的距离 / 当前档位取景距离」决定，不依赖是否选中，
- * 所以任意一颗恒星只要被靠近就会显形；远景里所有近景球一律 invisible。
+ * 球体本身仍是「用类似太阳的模型去建立」：程序化米粒组织光球 + 色球 / 日冕，
+ * 不需要为每颗恒星单独建模；它不参与银河系定位，也不改变档位尺度。
  */
 import * as THREE from 'three';
 
 // ---------- 纯数学（无 DOM / 无 Three.js 依赖，供 check:stars 直接断言） ----------
+
+/** 1 场景单位 = 1 kpc = 3261.56 光年（与 systems/galaxy.js 的 LY_PER_KPC 一致） */
+export const UNITS_PER_LY = 1 / 3261.56;
+/** 只有视野跨度 ≤ 1 光年的档位（6 档里的最内档）才允许出现球体 */
+export const PORTRAIT_TIER_SPAN_LY = 1;
+/** 相机进入恒星 1 光年以内才可能显形；0.55 光年及更近完全不透明 */
+export const PORTRAIT_REVEAL_LY = 1;
+export const PORTRAIT_FULL_LY = 0.55;
+/** 外链直达把镜头放到这个距离（光年），保证一打开就看到球面 */
+export const PORTRAIT_CLOSEUP_LY = 0.45;
+/** 球半径上限（光年）：直径 0.1 ly < 最近恒星对间距 0.21 ly，绝不互相穿插 */
+export const PORTRAIT_MAX_RADIUS_LY = 0.05;
 
 /**
  * 真实半径 → 近景球体的相对半径系数。
@@ -28,29 +42,49 @@ export function starSizeFactor(radiusSun = 1) {
   return Math.min(3, 0.72 + 0.55 * Math.log10(1 + r));
 }
 
-/**
- * 近景球的世界半径。
- * @param markerRadius 远景点的半径（def.size，银河系里恒为 0.07 场景单位）
- * @param tierFactor   当前档位的示意尺寸系数 10^(-0.8i)，与 applyTierScale 同款
- * @param cameraDistance 相机到该恒星的距离；用它封顶，防止相机钻进球里
- */
-export function portraitRadius(markerRadius, tierFactor, radiusSun, cameraDistance) {
-  const r = Math.max(1e-9, Number(markerRadius) || 0.07) * Math.max(1e-9, tierFactor) * 7
-    * starSizeFactor(radiusSun);
-  return Math.min(r, Math.max(cameraDistance, 1e-9) * 0.42);
+/** 档位硬门槛：1 万 / 1 千 / 100 / 10 光年档一律不许出现球体。 */
+export function tierAllowsPortrait(spanLy) {
+  return Number.isFinite(spanLy) && spanLy <= PORTRAIT_TIER_SPAN_LY;
+}
+
+/** 绝对距离门槛：相机到该恒星必须小于 1 光年。 */
+export function starWithinPortrait(dLy) {
+  return Number.isFinite(dLy) && dLy >= 0 && dLy < PORTRAIT_REVEAL_LY;
 }
 
 /**
- * 距离驱动的淡入：档位取景距离处完全不可见（远景仍是一个点），
- * 缩到 0.43× 取景距离时完全显形。返回 0..1。
+ * 唯一性：给一组候选 { id, dLy, visible }，返回这一帧唯一允许显形的 id。
+ * 档位不符、或没有任何恒星进入 1 光年内 → null（全部隐藏，仍只是点）。
  */
-export function portraitOpacity(cameraDistance, tierDistance) {
-  if (!(tierDistance > 0) || !(cameraDistance >= 0)) return 0;
-  return Math.max(0, Math.min(1, (tierDistance * 0.98 - cameraDistance) / (tierDistance * 0.55)));
+export function selectStarPortrait(candidates, spanLy) {
+  if (!tierAllowsPortrait(spanLy)) return null;
+  let best = null;
+  for (const c of candidates) {
+    if (!c || !c.visible || !starWithinPortrait(c.dLy)) continue;
+    if (!best || c.dLy < best.dLy) best = c;
+  }
+  return best ? best.id : null;
 }
 
-/** 档位示意尺寸系数，必须与 main.js applyTierScale 保持一致 */
-export const tierFactorOf = (i) => Math.pow(10, -Math.max(0, i) * 0.8);
+/** 淡入：1 光年处 0，0.55 光年及更近处 1（参数是光年，不是场景单位）。 */
+export function portraitOpacity(dLy) {
+  if (!starWithinPortrait(dLy)) return 0;
+  return Math.min(1, (PORTRAIT_REVEAL_LY - dLy) / (PORTRAIT_REVEAL_LY - PORTRAIT_FULL_LY));
+}
+
+/**
+ * 近景球的世界半径（场景单位）：按真实半径相对大小给出 0.0225~0.05 光年，
+ * 再按相机距离封顶，防止贴太近时钻进球内。与档位系数完全无关。
+ * @param radiusSun 真实半径 / 太阳半径
+ * @param cameraDistanceUnits 相机到恒星的距离（场景单位）
+ * @param unitsPerLy 1 光年 = 多少场景单位
+ */
+export function portraitRadius(radiusSun, cameraDistanceUnits, unitsPerLy = UNITS_PER_LY) {
+  const rel = starSizeFactor(radiusSun) / starSizeFactor(1);
+  const rLy = Math.min(PORTRAIT_MAX_RADIUS_LY, PORTRAIT_MAX_RADIUS_LY * 0.45 * rel);
+  const u = Number.isFinite(unitsPerLy) && unitsPerLy > 0 ? unitsPerLy : UNITS_PER_LY;
+  return Math.min(rLy * u, Math.max(cameraDistanceUnits, 1e-12) * 0.42);
+}
 
 // ---------- 程序化贴图（不依赖外部图片，静态部署 / 离线可用） ----------
 
