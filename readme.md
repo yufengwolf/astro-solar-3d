@@ -19,13 +19,33 @@
 | 页面 | 地址 |
 | --- | --- |
 | 导航主页 | `https://astro-solar-3d.pages.dev/` |
-| 太阳系总览 | `https://astro-solar-3d.pages.dev/overview` |
+| 太阳系总览 | `https://astro-solar-3d.pages.dev/solar` |
 | 银河系 | `https://astro-solar-3d.pages.dev/galaxy` |
 | 本星系群 | `https://astro-solar-3d.pages.dev/cosmos?node=localgroup` |
 | 可观测宇宙 | `https://astro-solar-3d.pages.dev/cosmos?node=universe` |
 | 木星系统 | `https://astro-solar-3d.pages.dev/jupiter` |
 | 土星系统 | `https://astro-solar-3d.pages.dev/saturn` |
 | 地月系统 | `https://astro-solar-3d.pages.dev/earth-moon` |
+
+### 天体级直达外链（供外部网页 / iframe 引用）
+
+**每个天体一条稳定链接**：打开即聚焦该天体、显示信息卡、冻结公转，不需要进入页面后再点菜单。链接只依赖域名前缀之后的路径，本地 `http://localhost:4172` 与线上 CF Pages 通用。
+
+| 用途 | 形式 | 示例 |
+| --- | --- | --- |
+| 规范链接 | `<页面>?body=<ID>` | `/solar?body=earth`、`/jupiter?body=europa`、`/galaxy?body=proxima` |
+| 万能入口 | `go.html?body=<ID>` | `/go?body=earth`（只记 ID，自动落到正确页面） |
+| iframe 精简界面 | 追加 `&embed=1` | `/solar?body=earth&embed=1`（隐藏导航 / 菜单 / 控制面板，只留天体特写与信息卡） |
+| 英文界面 | 追加 `&lang=en` | `/solar?body=earth&embed=1&lang=en` |
+| 锚点别名 | `<页面>#<ID>` | `/solar#earth`（可在不刷新页面的情况下切换天体） |
+| 跨页消歧 | `页面:ID` | `jupiter:jupiter`（木星系统页的木星）、`galaxy:sun`（银河系页的太阳） |
+
+- `ID` 全局唯一时直接用短名（`earth` / `europa` / `proxima`），中文名（`地球`）也能解析；`jupiter`、`mars`、`sun`、`earth` 等跨页同名默认归太阳系总览。
+- 链接给错页面会自动纠正：`/solar?body=europa` → `/jupiter?body=europa`，`lang` / `embed` 等参数原样透传。
+- 银河系页的深空天体会按真实距离自动切到对应比例尺档；太阳系页聚焦本身已把相机放到天体旁，`?view=` 与 `?body=` 同时出现时以 `body` 为准。
+- **清单**：`/links.html` 可搜索、一键复制完整地址或 `<iframe>` 代码（自动套用当前站点前缀）；`/links.json` 是同一份机器可读数据。当前 **130 个天体 / 9 个页面**。
+- 清单由 `scripts/gen-deeplinks.mjs` 从真实 system 配置生成，`npm run build` / `npm run dev` 前自动跑；新增天体只需改配置，链接自动进表。`npm run check:deeplinks` 会校验清单与配置一致、ID 唯一、URL 契约正确。
+- 旧的 `overview.html` 已改名为 **`solar.html`**（与 `galaxy` / `cosmos` 命名一致），旧地址不再可用。
 
 ---
 
@@ -61,7 +81,7 @@
 - **多层级 3D 系统**：太阳系总览 + 地月 / 火星 / 木星 / 土星 / 天王星 / 海王星 / 冥王星子系统 + 银河系 + 通用大尺度层级页（本星系群、超星系团、可观测宇宙）。每个可单独打开、单独构建，互不覆盖。
 - **视觉放大**：卫星太小看不见？拖「视觉放大 ×N」只放大天体尺寸、轨道比例不变，角标实时标注倍数。
 - **真实彗星**：5 颗彗星（哈雷、恩克、坦普尔 1 号、67P、坦普尔-塔特尔）带**彗发 + 离子尾 + 尘埃尾**。彗核按真实反照率（0.04）渲染成几乎不可见的暗点，所见的光来自彗发；尾巴由粒子流实时塑形（湍流、条纹、抛物线弯曲），始终背离太阳；长度与亮度按 1/r² 随日心距变化——远日点只剩一颗又黑又小的核，越靠近太阳尾巴越长。
-- **分档视角**：总览可在「内太阳系 / 八大行星区 / 柯伊伯带 / 含阋神星」之间切换。矮行星把外缘推到 68 AU，一屏塞全部时内行星会偏小，切档即可细看。也支持 URL 参数直接指定初始档位：`/overview?view=inner`（`inner` / `planets` / `kuiper` / `all`），嵌入 iframe 时可直接停在想要的范围。
+- **分档视角**：总览可在「内太阳系 / 八大行星区 / 柯伊伯带 / 含阋神星」之间切换。矮行星把外缘推到 68 AU，一屏塞全部时内行星会偏小，切档即可细看。也支持 URL 参数直接指定初始档位：`/solar?view=inner`（`inner` / `planets` / `kuiper` / `all`），嵌入 iframe 时可直接停在想要的范围。
 - **交互探索**：拖拽旋转、滚轮缩放；点击天体相机飞近并弹出资料卡；巨行星卫星太多时用「取景范围」分档查看。
 - **全链任意上下遨游**：每页顶部都有层级面包屑（可观测宇宙 › … › 太阳系）、「上一级 / 下一级」按钮与**宇宙地图**抽屉，任一层一键直达；滚轮缩到最外圈也会自动上浮一层，最内档继续放大则下钻一层。左侧天体菜单可飞到任意天体，有卫星的行星带「卫星系」直达标签。跨数量级用页面切换作为显式 LOD 边界，避免连续缩放的浮点精度坑。
 - **银河系（定性示意）**：旋臂用对数螺旋近似，恒星为点云（核球+旋臂+银晕），银盘整体缓慢自转；太阳与人马座 A* 为可下钻的恒星锚点。距银心约 2.7 万光年的太阳在银河系里只是约 2000 亿颗恒星中普通的一颗。

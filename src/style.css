@@ -677,3 +677,16 @@ body > #gui-container { top: 48px !important; }
     .hl-step { flex: 1 1 45%; }
     .hl-arrow { display: none; }
 }
+
+/* ===== ?embed=1：给外部 iframe 用的精简界面 =====
+   只保留 3D 天体特写、名字标签与信息卡，其余导航 / 控制 UI 全部隐藏。 */
+body.embed #universeNav,
+body.embed #universeMap,
+body.embed #bodyNav,
+body.embed .lang-toggle,
+body.embed #gui-container,
+body.embed .scale-bar,
+body.embed #exaggerationBadge { display: none !important; }
+body.embed .planet-info { width: min(280px, 62vw); right: 6px; bottom: 6px; }
+body.embed .planet-info-content { padding: 14px 16px; font-size: 12px; }
+body.embed #bodyLabels { z-index: 9; }

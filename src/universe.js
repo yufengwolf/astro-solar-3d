@@ -244,7 +244,7 @@ export const NODES = [
   N({
     id: 'solar', parent: 'milkyway', kind: 'system', detail: 'full',
     zh: '太阳系', en: 'Solar System',
-    url: 'overview.html', spanLy: 2, dLy: 0, pos: [-7.73, 0.02, 2.74],
+    url: 'solar.html', spanLy: 2, dLy: 0, pos: [-7.73, 0.02, 2.74],
     focus: 'earth-moon', color: 0xffcf4d, accent: '#ffcf4d', seed: 2021,
     scaleZh: '奥尔特云直径约 2 光年', scaleEn: 'Oort cloud ~2 light-years across',
     briefZh: '太阳、八大行星、矮行星、小天体与彗星。这里按 JPL / PDS 真实轨道参数绘制，可继续下钻到各行星的卫星系统。',
@@ -398,7 +398,9 @@ export function resolveCurrentId(search = '', pathname = '') {
     if (!pathname) pathname = location.pathname;
     if (!search) search = location.search;
   } catch { /* Node 下由调用方传入 */ }
-  const file = pathname.split('/').pop() || 'index.html';
+  let file = pathname.split('/').pop() || 'index.html';
+  // /solar?body=earth 这类无扩展名外链同样要能反查到层级节点
+  if (!file.includes('.')) file += '.html';
   if (file === 'cosmos.html') {
     const id = new URLSearchParams(search).get('node');
     return id && byId(id) ? id : ROOT_ID;

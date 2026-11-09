@@ -10,10 +10,12 @@ const here = dirname(fileURLToPath(import.meta.url));
  */
 export const ENTRIES = {
   home: 'index.html',
-  overview: 'overview.html',
+  solar: 'solar.html',
   galaxy: 'galaxy.html',
   // 通用大尺度层级页：?node=<id> 复用同一份 HTML 渲染注册表里任意上层节点
   cosmos: 'cosmos.html',
+  // 万能天体直达入口：go.html?body=<ID> 自动跳到该天体所在页面，不加载 Three.js
+  go: 'go.html',
   earthMoon: 'earth-moon.html',
   mars: 'mars.html',
   jupiter: 'jupiter.html',

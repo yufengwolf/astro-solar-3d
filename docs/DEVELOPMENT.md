@@ -9,7 +9,7 @@
 
 ```
 src/
-  index.html / overview.html / earth-moon.html / mars.html / ...   页面入口（每系统一个）
+  index.html / solar.html / earth-moon.html / mars.html / ...   页面入口（每系统一个）
   entries/         入口脚本：引入某系统配置并调用 start()
   systems/
     mk.js          用真实参数生成天体定义的辅助函数
@@ -30,7 +30,7 @@ vite.config.js    全量构建
 vite.*.config.js  单系统构建
 ```
 
-构建产物全部落在 `dist/` 根目录（`index.html`、`overview.html`、`earth-moon.html`…），
+构建产物全部落在 `dist/` 根目录（`index.html`、`solar.html`、`earth-moon.html`…），
 共享同一个 `dist/assets/`，因此 three.js 公共块跨页面只下载一次。
 
 ---

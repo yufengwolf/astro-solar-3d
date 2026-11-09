@@ -99,7 +99,7 @@ for (const id of ['solar', 'milkyway', 'localgroup', 'virgo', 'laniakea', 'unive
   if (childrenOf(id).length && !down) fail(`${id} 有子节点却缺少下一级链接`);
 }
 if (parentHref('solar') !== 'galaxy.html') fail(`太阳系的上一级应指向银河系，实际: ${parentHref('solar')}`);
-if (childHref('milkyway') !== 'overview.html') fail(`银河系的下一级应指向太阳系，实际: ${childHref('milkyway')}`);
+if (childHref('milkyway') !== 'solar.html') fail(`银河系的下一级应指向太阳系，实际: ${childHref('milkyway')}`);
 
 // ---- 视觉尺度：成员一律是「点」，且相对大小符合真实直径 ----
 // 防回归：曾经每个成员被画成 900 点的白色绒球、尺寸还被兜底成统一的
@@ -175,7 +175,7 @@ const cases = [
   ['?node=localgroup', '/cosmos.html', 'localgroup'],
   ['?node=andromeda', '/cosmos.html', 'andromeda'],
   ['', '/cosmos.html', ROOT_ID],
-  ['', '/overview.html', 'solar'],
+  ['', '/solar.html', 'solar'],
   ['', '/galaxy.html', 'milkyway'],
   ['', '/pluto.html', 'pluto'],
   ['', '/index.html', null],

@@ -363,7 +363,7 @@ export default {
       tier: SCALE_TIERS.length - 1,
       color: 0xfff0c0,
       glowSize: 0.42,
-      childSystem: 'overview.html',
+      childSystem: 'solar.html',
       childSystemLabel: '太阳系',
       info: {
         位置: '距银心约 8.2 千秒差距，位于银河系一条主旋臂上',

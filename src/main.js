@@ -16,6 +16,7 @@ import {
   href as universeHref,
 } from './universe.js';
 import { mountUniverseNav } from './nav.js';
+import { resolveBody, bodyHref, carryParams, currentPageFile } from './deeplinks.js';
 import {
   t, distText, tierLabel, tierShort, systemName, groupName,
   viewName, infoKey, infoValue, bodyName, shortName,
@@ -489,6 +490,20 @@ export function start(system) {
   // 不再依赖每个 system 各自硬编码的 parentSystem / zoomOutTo / childSystem。
   const currentNodeId = resolveCurrentId();
 
+  // ---------- 天体级直达外链：?body=<ID> / #<ID> ----------
+  // 打开链接即聚焦该天体、显示信息卡、冻结公转，不需要再点菜单。
+  // ID 可以是全局短名（earth）、跨页消歧名（jupiter:jupiter）或中文名（地球）。
+  const deepParams = new URLSearchParams(location.search);
+  const rawBody = deepParams.get('body') || deepParams.get('focus') || location.hash.slice(1);
+  const deepBody = resolveBody(rawBody);
+  if (deepParams.get('embed') === '1') document.body.classList.add('embed');
+  // 链接给错页面时自动纠正（/solar?body=europa → /jupiter?body=europa），
+  // lang / embed / scale 等参数原样透传。
+  if (deepBody && deepBody.page !== currentPageFile()) {
+    location.replace(bodyHref(deepBody.key, carryParams(['body', 'focus'])));
+    return;
+  }
+
   // 安全网：无太阳的子系统里，没有 parent 的天体就是中心天体，不该带公转轨道。
   // （REAL 里地球/木星等都存着绕日轨道，漏写 noOrbit 会让整个系统飞出画面。）
   for (const def of system.bodies) {
@@ -785,7 +800,9 @@ export function start(system) {
     // 默认选中与 camera.frameTo 对应的那一档（views[0] 不一定就是默认视角）；
     // 支持 ?view=<id> 直接指定初始档位（截图 / 嵌入 iframe 时想停在某个范围）
     const want = new URLSearchParams(location.search).get('view');
-    const byUrl = want ? views.findIndex((v) => v.id === want) : -1;
+    // body 直达时忽略 view：applyView 会把 selected 清空并开始飞行，
+    // 覆盖掉下面刚做好的天体聚焦。聚焦本身已经把相机放到该天体旁，无需再取景。
+    const byUrl = want && !deepBody ? views.findIndex((v) => v.id === want) : -1;
     const defId = byUrl >= 0 ? byUrl
       : views.findIndex((v) => v.frameTo === (system.camera?.frameTo ?? 'auto'));
     settings.view = labels[Math.max(0, defId)];
@@ -1522,12 +1539,59 @@ export function start(system) {
   }
   buildScaleBar();
 
-  // ---------- ?focus=<id> / ?scale=<spanLy> 深链 ----------
+  // 深链必须等首帧把开普勒轨道位置写进 group 后再取世界坐标：
+  // 否则 getWorldPosition() 还是 (0,0,0)，相机会被推到太阳表面、整屏糊成黄色（实测过）。
+  requestAnimationFrame(() => {
+  // ---------- ?body=<id> / #<id> / ?focus=<id> / ?scale=<spanLy> 深链 ----------
   // 银河系页：?scale= 直接定位档位（用于博客 iframe 与逐档截图）；
-  // ?focus= 自动切到该天体所属档位并把观察焦点移过去，背景与其它天体照常保留。
+  // 指定天体则自动切到它所属档位并把观察焦点移过去，背景与其它天体照常保留。
+  // deepBody 解析出的是页内 ID；cosmos 页的动态成员没进注册表，按原样走 focus 兜底。
   const params = new URLSearchParams(location.search);
-  const focusId = params.get('focus');
+  const focusId = deepBody ? deepBody.id
+    : (params.get('body') || params.get('focus') || location.hash.slice(1));
   const scaleParam = params.get('scale');
+
+  // 即时到位（不走相机飞行）：外链打开或改 hash 时要立刻看到天体，而不是等几秒飞过去。
+  // 复现「点击该天体后」的界面：相机对准、暂停公转、菜单高亮、信息卡展开。
+  function focusInstant(id) {
+    const def = infoById.get(id);
+    const obj = focusObjectOf(id);
+    if (!def || !obj) return false;
+    const wp = new THREE.Vector3();
+    obj.getWorldPosition(wp);
+    controls.target.copy(wp);
+    // 与 focusOn 同一套取景距离：旧的固定 2 单位比地球本体还小，
+    // 相机贴在球内部反而什么都看不见；彗星还要按彗尾长度退开。
+    const tailUnits = def.comet ? (def.comet.ionTailUnits ?? 100) : 0;
+    const offset = def.cameraOffset ?? Math.max(def.size * 8, tailUnits * 0.35, 2);
+    // 站在天体「朝中心天体」的一侧、略偏切向与上方：中心光源落在相机背后，
+    // 看到的是被照亮的一面，而且太阳不会进入画面把它糊满。
+    // 不能用「当前相机位置 - 天体」当方向，轨道相位不同结果不可控（实测会贴进太阳）。
+    const radial = wp.clone();
+    let dir;
+    if (radial.lengthSq() < 1e-6) {
+      dir = new THREE.Vector3(...(system.camera?.position ?? [-0.83, 0.55, 0.06])).normalize();
+    } else {
+      radial.normalize();
+      const tangent = new THREE.Vector3().crossVectors(radial, new THREE.Vector3(0, 1, 0));
+      if (tangent.lengthSq() < 1e-6) tangent.set(1, 0, 0);
+      dir = radial.clone().multiplyScalar(-0.55)
+        .addScaledVector(tangent.normalize(), 0.6)
+        .add(new THREE.Vector3(0, 0.42, 0))
+        .normalize();
+    }
+    camera.position.copy(wp).add(dir.multiplyScalar(offset));
+    camera.lookAt(wp);
+    selected = def;
+    paused = true;
+    flying = false;
+    isMoving = false;
+    setActiveShowcase(id);
+    highlightNav(id);
+    showInfo(def);
+    return true;
+  }
+
   if (TIERS) {
     let initTier = 0;
     if (scaleParam) {
@@ -1554,24 +1618,18 @@ export function start(system) {
       highlightNav(focusId);
       showInfo(def);
     }
-  } else if (focusId && infoById.has(focusId) && !flying) {
-    // 其它系统页保持原有深链行为
-    const def = infoById.get(focusId);
-    const obj = focusObjectOf(focusId);
-    if (obj) {
-      const wp = new THREE.Vector3();
-      obj.getWorldPosition(wp);
-      controls.target.copy(wp);
-      const dir = camera.position.clone().sub(controls.target).normalize();
-      camera.position.copy(wp).add(dir.multiplyScalar(def.cameraOffset ?? 2));
-      camera.lookAt(wp);
-      selected = def;
-      paused = true;
-      setActiveShowcase(focusId);
-      highlightNav(focusId);
-      showInfo(def);
-    }
+  } else if (focusId) {
+    focusInstant(focusId);
   }
+
+  // 同一页面内改 hash 即可切换天体（iframe 里无需刷新页面），同样即时到位
+  window.addEventListener('hashchange', () => {
+    const id = resolveBody(location.hash)?.id ?? location.hash.slice(1);
+    if (!id || !infoById.has(id)) return;
+    if (TIERS) selectBody(id);
+    else focusInstant(id);
+  });
+  });
 
   // ---------- 滚轮：跨 10× 自动切档 + 现有 zoomOutTo 边界 ----------
   // 卫星/行星系统页行为完全不变；银河系页由 animate() 在 controls.update() 后判档。

@@ -304,7 +304,7 @@ const HOME = {
 
 const PAGE_TITLES = {
   'index.html': ['太阳系 3D 交互可视化', 'Solar System 3D Visualization'],
-  'overview.html': ['太阳系总览', 'Solar System Overview'],
+  'solar.html': ['太阳系总览', 'Solar System Overview'],
   'galaxy.html': ['银河系', 'Milky Way'],
   'earth-moon.html': ['地月系统', 'Earth–Moon System'],
   'mars.html': ['火星系统', 'Mars System'],
@@ -317,7 +317,9 @@ const PAGE_TITLES = {
 
 function applyStaticI18n() {
   document.documentElement.lang = isEn() ? 'en' : 'zh-CN';
-  const file = location.pathname.split('/').pop() || 'index.html';
+  let file = location.pathname.split('/').pop() || 'index.html';
+  // Cloudflare Pages 支持 /solar 这类无扩展名地址，补上后缀才能命中标题表
+  if (!file.includes('.')) file += '.html';
   const pt = PAGE_TITLES[file];
   if (pt) document.title = pt[isEn() ? 1 : 0];
 
