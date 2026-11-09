@@ -782,6 +782,8 @@ export function start(system) {
   document.body.appendChild(followBadge);
 
   const gui = new dat.GUI({ autoPlace: false });
+  // 移动端默认收起控制面板：手机上右上角那一大块会盖住大半个屏幕
+  if (window.innerWidth <= 760) { try { gui.close(); } catch (_) {} }
   const guiContainer = document.getElementById('gui-container');
   if (guiContainer) guiContainer.appendChild(gui.domElement);
   gui.add(settings, 'timeScale', 0, 200).name(t('timeScale'));
@@ -1381,9 +1383,22 @@ export function start(system) {
     title.className = 'bn-title';
     title.textContent = systemName(system.label ?? system.id);
     head.appendChild(title);
+    // 移动端折叠按钮：手机上默认收起，只留标题栏，点一下展开（避免盖住 3D 主屏）
+    const bnToggle = document.createElement('button');
+    bnToggle.type = 'button';
+    bnToggle.className = 'bn-toggle';
+    const syncBnToggle = () => {
+      const collapsed = nav.classList.contains('collapsed');
+      bnToggle.textContent = collapsed ? t('navExpand') : t('navCollapse');
+      bnToggle.setAttribute('aria-label', bnToggle.textContent);
+    };
+    bnToggle.onclick = (e) => { e.stopPropagation(); nav.classList.toggle('collapsed'); syncBnToggle(); };
+    head.appendChild(bnToggle);
     // 上级 / 跨层级导航统一交给顶部的宇宙导航条（面包屑 + 上下级 + 宇宙地图）。
     // 这里不再塞只认 parentSystem 的返回按钮 —— 那正是「太阳系回不去银河系」的根因。
     nav.appendChild(head);
+    if (window.innerWidth <= 760) nav.classList.add('collapsed');
+    syncBnToggle();
     // 星系肖像页：用一句话点出这个星系的真实形态，和画面互相印证
     if (system.portraitCaption) {
       const cap = document.createElement('div');
@@ -2005,8 +2020,21 @@ export function start(system) {
     hint.className = 'sb-hint';
     hint.textContent = t('scaleHint');
     bar.appendChild(hint);
+    // 移动端折叠按钮：默认收成底部一个胶囊，点开才是完整档位条
+    const sbToggle = document.createElement('button');
+    sbToggle.type = 'button';
+    sbToggle.className = 'sb-toggle';
+    const syncSbToggle = () => {
+      const collapsed = bar.classList.contains('collapsed');
+      sbToggle.textContent = collapsed ? t('scaleExpand') : t('scaleCollapse');
+      sbToggle.setAttribute('aria-label', sbToggle.textContent);
+    };
+    sbToggle.onclick = (e) => { e.stopPropagation(); bar.classList.toggle('collapsed'); syncSbToggle(); };
+    bar.insertBefore(sbToggle, bar.firstChild);
     document.body.appendChild(bar);
     scaleBar = bar;
+    if (window.innerWidth <= 760) bar.classList.add('collapsed');
+    syncSbToggle();
   }
   function updateBackdropUI() {
     if (!backdropBtn) return;
@@ -2030,6 +2058,17 @@ export function start(system) {
   }
   buildScaleBar();
   updateBackdropUI();   // 未聚焦时先收起「换个背景」按钮
+
+  // 移动端：从手机旋转/放大到桌面时，自动展开被收起的面板，尊重桌面布局
+  let _wasMobile = window.innerWidth <= 760;
+  window.addEventListener('resize', () => {
+    const mobile = window.innerWidth <= 760;
+    if (_wasMobile && !mobile) {
+      document.getElementById('bodyNav')?.classList.remove('collapsed');
+      scaleBar?.classList.remove('collapsed');
+    }
+    _wasMobile = mobile;
+  });
 
   // 深链必须等首帧把开普勒轨道位置写进 group 后再取世界坐标：
   // 否则 getWorldPosition() 还是 (0,0,0)，相机会被推到太阳表面、整屏糊成黄色（实测过）。
