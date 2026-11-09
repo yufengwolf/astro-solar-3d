@@ -58,6 +58,7 @@ const UI = {
     nameSun: '太阳',
     scaleLabel: '比例尺 · 一格 = ',
     scaleHint: '滚轮每跨 10× 自动切一档 · 也可直接点击',
+    focusScaleHint: '滚轮沿有内容的尺度缩放 · 点上方档位返回宏观 6 档',
     tierTitle: (label) => `切到${label}视野`,
     unitLy: '光年',
     unitKpc: '千秒差距',
@@ -70,8 +71,10 @@ const UI = {
       ? '镜头跟随中：随该天体一同公转，时间与背景照常运行'
       : '时间已暂停：镜头锁定该天体，全场静止',
     // 恒星近景：放大后才出现的「类太阳」球体
-    starRadius: (r) => `半径：约 ${r} 倍太阳半径（近景示意，按真实半径比例缩放）`,
-    starCloseupHint: '现在是「一个点」：只有切到 1 光年档、镜头进入 1 光年以内才会显出球面与日冕',
+    starRadius: (r) => `半径：约 ${r} 倍太阳半径（真实物理尺度，非示意球）`,
+    starCloseupHint: '现在是「一个点」：继续放大到几十倍恒星半径，球面与日冕才会显形',
+    starCloseupNote: '真实尺度特写：往外缩会跳过空白尺度，回到能看到邻近天体的视野',
+    focusSpan: (s) => `当前视野 · ${s}`,
     // 宇宙层级导航
     navRoot: '宇宙遨游',
     navHome: '星图首页',
@@ -114,6 +117,7 @@ const UI = {
     nameSun: 'Sun',
     scaleLabel: 'Scale · one step = ',
     scaleHint: 'Scroll 10× to switch tier · or click a step',
+    focusScaleHint: 'Scroll through scales that have content · click a step to return to the 6 macro tiers',
     tierTitle: (label) => `View: ${label}`,
     unitLy: 'ly',
     unitKpc: 'kpc',
@@ -126,8 +130,10 @@ const UI = {
       ? 'Camera tracking: follows this body along its orbit; time keeps running'
       : 'Time paused: camera locked on this body, everything is still',
     // Close-up star portrait
-    starRadius: (r) => `Radius: ~${r} solar radii (close-up sketch, scaled by real radius)`,
-    starCloseupHint: 'Still a point: only the 1-light-year tier, within 1 ly of this star, reveals its photosphere and corona',
+    starRadius: (r) => `Radius: ~${r} solar radii (true physical size, not a sketch)`,
+    starCloseupHint: 'Still a point: zoom in to within a few dozen stellar radii to reveal the photosphere and corona',
+    starCloseupNote: 'True-scale close-up: zooming out skips empty scales and returns to a field with nearby stars',
+    focusSpan: (s) => `View · ${s}`,
     // Cosmic hierarchy navigation
     navRoot: 'Cosmic Atlas',
     navHome: 'Atlas home',
@@ -175,6 +181,29 @@ export function tierShort(tier) {
   if (tier.shortEn) return tier.shortEn;
   const n = tier.spanLy;
   return n >= 1000 ? `${n / 1000}k ly` : `${n} ly`;
+}
+
+/**
+ * 聚焦特写时比例条显示的「当前真实视野」。恒星特写只有几百万公里~几十 AU，
+ * 用「光年」会写成 0.0000005 光年，完全不可读；小于 1 光年时自动降级到 AU / 公里。
+ */
+export function spanText(ly) {
+  if (!Number.isFinite(ly) || ly <= 0) return '—';
+  const en = isEn();
+  const fmt = (v) => {
+    const a = Math.abs(v);
+    if (a >= 1000) return Math.round(v).toLocaleString('en-US');
+    if (a >= 10) return v.toFixed(0);
+    if (a >= 1) return v.toFixed(1);
+    return Number(v.toPrecision(2)).toString();
+  };
+  if (ly >= 1) return `${fmt(ly)} ${en ? 'ly' : '光年'}`;
+  const au = ly * 63241.077;
+  if (au >= 0.1) return `${fmt(au)} ${en ? 'AU' : '天文单位'}`;
+  const km = ly * 9.4607304725808e12;
+  if (km >= 1e8) return `${fmt(km / 1e8)} ${en ? '×10⁸ km' : '亿公里'}`;
+  if (km >= 1e4) return `${fmt(km / 1e4)} ${en ? '×10⁴ km' : '万公里'}`;
+  return `${fmt(km)} ${en ? 'km' : '公里'}`;
 }
 
 // ---------- 系统 / 分组 / 视角 ----------

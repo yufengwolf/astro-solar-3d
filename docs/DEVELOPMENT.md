@@ -24,7 +24,8 @@ src/
   universe.js      宇宙层级注册表（导航 / 页面反查 / 站内链接的唯一真相源）
   deeplinks.js     天体 ID 解析与规范链接生成
   follow.js        跟随镜头的共转数学（纯函数）
-  star-portrait.js 恒星近景 LOD：程序化光球 / 色球 / 日冕 + 1 光年档门槛与唯一候选数学
+  star-portrait.js 恒星光球 / 色球 / 日冕生成（尺度数学转出 zoom-ladder.js）
+  zoom-ladder.js   真实半径换算 / 角尺寸显隐 / 内容驱动缩放阶梯（纯数学，无 three）
   galaxy-portrait.js / portraits.js   星系自身形态
   main.js          场景编排：相机、光照、后处理、GUI、拾取、动画
   style.css
@@ -327,7 +328,7 @@ npm run check:comet   # 用生产代码验证：彗尾是否严格背离太阳�
 
 ---
 
-## URL 契约与恒星近景 LOD
+## URL 契约与恒星真实尺度
 
 三层外链都由 `scripts/gen-deeplinks.mjs` 生成，别手工编辑 `src/data/deeplinks.*`：
 
@@ -339,15 +340,19 @@ npm run check:comet   # 用生产代码验证：彗尾是否严格背离太阳�
 
 `go.html` 的 `body` 优先于 `node` 优先于 `page`，`lang` / `embed` / `scale` / `debug` 等参数原样透传。清单版本为 `2`（`pages` / `nodes` / `bodies`）；只加天体时改 `src/systems/*.js`，只加星系时改 `NODES`，跑一次 `npm run gen:links` 三层都会更新，`npm run check:deeplinks` 会比对注册表防止漏项。
 
-恒星近景是**绝对尺度 LOD**，与「是否选中」无关，但受三条硬规则约束：
+### 恒星真实尺度与内容驱动缩放
 
-- 远景：`fixedSize: 0.07` 的纯色点 + 光晕，所有 `starPortraits` 默认 `visible = false`；`applyTierScale()` 对这些锚点用严格 `10^-i` 同比缩小，占屏恒定，放大也不会膨胀成白斑；
-- 门槛：只有 `TIERS[currentTier].spanLy <= 1`（1 光年档）且相机距某颗恒星 `< 1 光年` 时才允许球体。1 万光年档连 `controls.minDistance` 都是上千光年，物理上不可能触发（旧版按「相机距离 ÷ 本档取景距离」的相对比例判定，稍一滚轮所有恒星就一起淡入并互相重叠）；
-- 唯一性：`updateStarPortraits()` 每帧把候选 `{ id, dLy }` 交给 `selectStarPortrait()`，只返回离相机最近的一颗，其余一律 `visible = false`。比邻星与南门二只隔约 0.21 光年，实测确有两颗同时进入 1 光年内；
-- 球径：`portraitRadius(radiusSun, distance, UNITS_PER_LY)` 绝对封顶 0.05 光年，与档位系数无关；`portraitOpacity(dLy)` 在 1 光年为 0、0.55 光年为 1；
-- `?body=` / `hashchange` 落到恒星时 `setStarCloseup()` 强制切到最内档、把相机放到 0.45 光年外，并让该天体跳过 `dLy` 可见性窗口（`updateTierVisibility` 的 `forceId`），否则 4.24 光年外的比邻星会被 1 光年档过滤掉；菜单点击仍保留所在档位；
-- 疏散星团 / 星云 / 超新星遗迹 / 黑洞走 `deepSky.kind` 的既有展示物，不挂恒星球；
-- `?debug=1` 暴露 `portraitSpanLy` / `visiblePortraits` / `closeups[].radiusLy`，供 CDP 真机验证「大档零球、小档最多一颗」。
+尺度数学全部集中在 `src/zoom-ladder.js`（纯函数、无 three / DOM，`check:stars` 直接 import 断言）：
+
+- **真实半径**：R☉ = 6.957×10⁸ m = 7.3535×10⁻⁸ 光年；`starRadiusLy(r) = r × R☉`，`starRadiusUnits()` 再乘 `UNITS_PER_LY = 1/3261.56`。球半径线性、无压缩、无封顶，`portraitRadius()` 只在相机真钻进球内时按距离收缩。
+- **角尺寸显隐**：`portraitOpacity(dLy, radiusLy)` 用 `d/R` 判定，> 60R 纯点、≤ 12R 完全显形。`tierAllowsPortrait(effectiveSpanLy(d, fov))` 保留「视野 < 1 光年」护栏；最大恒星 60×764 R☉ 也只有 0.0034 光年，护栏自动满足。`selectStarPortrait()` 每帧只留 `d/R` 最小的一颗。
+- **自动特写**：`setStarCloseup()` 把相机放到 `closeupDistanceLy() = 9R`，同时把 `camera.near` 收到 `0.02 × 真实半径`（否则球被近裁剪面裁掉）、把 `controls.minDistance` 设为 `1.25R`、`maxDistance` 设为阶梯最外档 × 1.3。菜单点击 / 3D 拾取 / `?body=` / `hashchange` 走同一条路径。
+- **内容阶梯**：`beginFocusLadder()` 用 `byId` 的真实世界坐标算焦点到其它天体的三维距离，交给 `zoomStops(closeLy, neighbors, { waypoints: [revealLy*1.2] })`。停靠点只有特写、球淡成点、以及每个「首次有邻居入画」的距离（`d = D/0.4`，按 45° 视场垂直半视野取保守值），**不补 10 的整数次幂**。太阳在 1~100 光年有 4 档，心宿二 / 参宿四 0 档，首跳直接到 1249 / 786 光年。
+- **滚轮**：跟随态下 `nextZoomStop()` + `flyFocusTo()` 沿阶梯指数收敛；最外继续缩 `stopFollow()` 回宏观全景。未聚焦时完全走原来的 `applyTier()` 6 档逻辑（`check:stars` 断言前 5 档含缩到 `minDistance` 零球）。
+- **可见性窗口**：`updateTierVisibility(i, spanOverride)` 在跟随态以焦点为原点、按「到焦点的真实距离 ≤ 有效视野 × 0.75」过滤；未跟随时仍用「距太阳的 `dLy`」窗口。原来的写法会让焦点移到心宿二后其它天体全部消失，1 / 10 / 100 光年档永远只剩一个点。
+- **锚点 / near / 比例条**：`applyFocusAnchorScale()` 每帧按相机距离把所有锚点钳成屏幕空间恒定点；`updateScaleBarUI(i, span)` 特写时显示真实视野（`spanText()` 自动降级到 AU / 公里）与专属提示，档位按钮取消 active；退出时 `stopFollow()` → `applyTier(0)` 把 near / minDistance / 锚点 / 可见性全部复位。
+- 疏散星团 / 星云 / 超新星遗迹 / 黑洞仍走 `deepSky.kind` 的既有展示物，不挂恒星球；`cosmos.html` 的星系锚点带 `star:true` 但没有 `radiusSun`，被硬门槛排除。
+- `?debug=1` 暴露 `focusStops` / `focusDistanceLy` / `portraitSpanLy` / `cameraNear` / `visibleBodies` / `visiblePortraits` / `closeups[].radiusLy`，供 CDP 真机验证。
 
 改动后至少跑：
 

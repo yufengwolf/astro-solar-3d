@@ -1,13 +1,13 @@
 /**
- * 恒星近景 LOD 自检。
+ * 恒星真实尺度 / 内容驱动缩放阶梯自检。
  *
- * 三部分：
- *  1) 真实执行 src/star-portrait.js（Node 里用最小 canvas 桩）：贴图 / 球体结构、
- *     绝对光年门槛、唯一性选择、球径封顶；
- *  2) 用 galaxy.js 的**真实 6 档相机距离 + 真实恒星坐标**跑一遍候选计算：
- *     1 万 / 1 千 / 100 / 10 光年档（含滚轮放大到 minDistance）必须零球，
- *     1 光年档只能有一棵球，球直径必须小于最近邻恒星间距；
- *  3) 静态断言 main.js / galaxy.js 的生产配置与接线。
+ *  1) 真实执行 src/star-portrait.js（Node 里用最小 canvas 桩）：贴图、球体结构；
+ *  2) 单位换算与角尺寸显隐：R☉ → 光年 → 场景单位，球径就是真实半径，
+ *     「大尺度只能是点」「一帧最多一颗球」由物理尺度自动成立；
+ *  3) 用 galaxy.js 的**真实 6 档相机距离 + 真实恒星坐标**验证前 5 档零球；
+ *  4) 用真实恒星三维坐标生成内容阶梯：太阳在 1/10/100 光年有多档变化，
+ *     心宿二 / 参宿四在这段一个停靠点都没有，直接跳到有邻居的尺度；
+ *  5) 静态断言生产配置与 main.js 接线，禁止旧示意球 API 残留。
  */
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -38,84 +38,78 @@ globalThis.document = {
 
 const SP = await import('../src/star-portrait.js');
 const {
-  starSizeFactor, portraitRadius, portraitOpacity, selectStarPortrait,
-  tierAllowsPortrait, starWithinPortrait, createStarPortrait,
-  UNITS_PER_LY, PORTRAIT_REVEAL_LY, PORTRAIT_FULL_LY, PORTRAIT_CLOSEUP_LY,
-  PORTRAIT_MAX_RADIUS_LY, PORTRAIT_TIER_SPAN_LY,
+  LY_M, SUN_RADIUS_M, SUN_RADIUS_LY, UNITS_PER_LY,
+  CLOSEUP_FACTOR, REVEAL_FACTOR, FULL_FACTOR, MAX_PORTRAIT_SPAN_LY,
+  starRadiusLy, starRadiusUnits, closeupDistanceLy, revealDistanceLy,
+  portraitRadius, effectiveSpanLy, tierAllowsPortrait, starWithinPortrait,
+  portraitOpacity, selectStarPortrait, zoomStops, nextZoomStop,
+  createStarPortrait,
 } = SP;
 
-// ---- 常量：球体只能活在 1 光年尺度 ----
+// ---- 1. 单位换算：球径必须是真实物理半径 ----
 assert.ok(Math.abs(UNITS_PER_LY - 1 / 3261.56) < 1e-12, '光年 → 场景单位换算错误');
-assert.equal(PORTRAIT_TIER_SPAN_LY, 1, '只有 1 光年档允许球体');
-assert.equal(PORTRAIT_REVEAL_LY, 1, '相机必须进入恒星 1 光年以内');
-assert.ok(PORTRAIT_CLOSEUP_LY < PORTRAIT_FULL_LY, '外链直达距离必须落在完全显形区间');
-assert.ok(PORTRAIT_MAX_RADIUS_LY * 2 < 0.21,
-  '球直径必须小于最近的恒星对间距（比邻星—南门二 ≈ 0.21 光年）');
+assert.ok(Math.abs(SUN_RADIUS_LY * LY_M - SUN_RADIUS_M) < 1, '1 太阳半径的米/光年换算不一致');
+assert.ok(SUN_RADIUS_LY > 7.3e-8 && SUN_RADIUS_LY < 7.4e-8, 'R☉ 应约 7.35e-8 光年');
+const rSunLy = starRadiusLy(1);
+const rBigLy = starRadiusLy(764);
+const rSmallLy = starRadiusLy(0.154);
+assert.ok(Math.abs(rSunLy - SUN_RADIUS_LY) < 1e-18);
+assert.ok(rBigLy > rSunLy * 700 && rSmallLy < rSunLy * 0.2,
+  '球径必须线性表达真实半径，不做对数压缩 / 示意封顶');
+assert.ok(Math.abs(starRadiusUnits(1) - rSunLy * UNITS_PER_LY) < 1e-24);
+assert.equal(starRadiusUnits(764), portraitRadius(764, Infinity, UNITS_PER_LY),
+  '球径不得随相机距离或档位缩放（除防钻进球内的保险）');
+assert.ok(Math.abs(closeupDistanceLy(1) - CLOSEUP_FACTOR * rSunLy) < 1e-20);
+assert.ok(Math.abs(revealDistanceLy(1) - REVEAL_FACTOR * rSunLy) < 1e-20);
+assert.ok(closeupDistanceLy(1) < revealDistanceLy(1));
+// 「只有小于 1 光年的尺度上才可能存在球体」——由真实半径自动成立
+assert.ok(REVEAL_FACTOR * rBigLy < MAX_PORTRAIT_SPAN_LY,
+  '最大的恒星（764 R☉）显形距离也必须远小于 1 光年');
+// 球直径远小于最近恒星对间距，物理上不可能两颗球互相穿插
+assert.ok(REVEAL_FACTOR * rBigLy * 2 < 0.21,
+  '显形范围必须小于最近的恒星对间距 0.21 光年');
+assert.ok(effectiveSpanLy(closeupDistanceLy(764), 45) < MAX_PORTRAIT_SPAN_LY,
+  '特写视野跨度必须小于 1 光年');
 
-// ---- 档位 / 距离 / 唯一性的纯数学 ----
-for (const span of [100000, 10000, 1000, 100, 10]) {
-  assert.equal(tierAllowsPortrait(span), false, `${span} 光年档不允许出现球体`);
-}
-assert.equal(tierAllowsPortrait(1), true, '1 光年档允许球体');
-assert.equal(tierAllowsPortrait(NaN), false, '非法档位不能产生 NaN 球体');
-assert.equal(starWithinPortrait(0.99), true);
-assert.equal(starWithinPortrait(1), false, '恰好 1 光年仍应是一个点');
-assert.equal(starWithinPortrait(Infinity), false);
-assert.equal(portraitOpacity(1), 0, '1 光年处必须是纯点');
-assert.equal(portraitOpacity(4.24), 0, '几光年外必须隐藏');
-assert.equal(portraitOpacity(PORTRAIT_FULL_LY), 1, '0.55 光年内完全显形');
-assert.ok(portraitOpacity(0.8) > 0 && portraitOpacity(0.8) < 1, '中间距离应淡入');
-assert.equal(portraitOpacity(NaN), 0, '非法距离不能产生 NaN 透明度');
-assert.equal(portraitOpacity(-1), 0);
-
+// ---- 2. 角尺寸驱动显隐 ----
+assert.equal(tierAllowsPortrait(1e5), false);
+assert.equal(tierAllowsPortrait(1.01), false);
+assert.equal(tierAllowsPortrait(1), true);
+assert.equal(tierAllowsPortrait(NaN), false);
+assert.equal(starWithinPortrait(REVEAL_FACTOR * rSunLy * 1.01, rSunLy), false);
+assert.equal(starWithinPortrait(REVEAL_FACTOR * rSunLy, rSunLy), true);
+assert.equal(starWithinPortrait(4.24, rSunLy), false, '几光年外必须是点');
+assert.equal(portraitOpacity(4.24, rSunLy), 0);
+assert.equal(portraitOpacity(REVEAL_FACTOR * rSunLy, rSunLy), 0);
+assert.equal(portraitOpacity(FULL_FACTOR * rSunLy, rSunLy), 1);
+assert.equal(portraitOpacity(closeupDistanceLy(1), rSunLy), 1, '特写距离必须完全显形');
+assert.ok(portraitOpacity(30 * rSunLy, rSunLy) > 0 && portraitOpacity(30 * rSunLy, rSunLy) < 1);
+assert.equal(portraitOpacity(NaN, rSunLy), 0);
+assert.equal(portraitOpacity(-1, rSunLy), 0);
+assert.equal(portraitOpacity(1, 0), 0);
+// 唯一性：真实半径下角尺寸最大的那一颗胜出
 const many = Array.from({ length: 19 }, (_, i) => ({
-  id: `star${i}`, dLy: 0.2 + i * 0.03, visible: true,
+  id: `star${i}`, dLy: (9 + i) * rSunLy, radiusLy: rSunLy, visible: true,
 }));
-assert.equal(selectStarPortrait(many, 1), 'star0', '只应留下离相机最近的一颗');
-assert.equal(selectStarPortrait(many, 10000), null, '1 万光年档必须零球');
-assert.equal(selectStarPortrait(many, 10), null, '10 光年档必须零球');
-assert.equal(selectStarPortrait([{ id: 'far', dLy: 4.24, visible: true }], 1), null,
-  '没有恒星进入 1 光年内就必须全是点');
-assert.equal(selectStarPortrait([{ id: 'hidden', dLy: 0.1, visible: false }], 1), null,
-  '被档位窗口隐藏的天体不能显球');
-assert.equal(selectStarPortrait(many.slice(0, 0), 1), null, '空候选不能显球');
-// 跨档一致性：任意 span>1 都不显球，不受相机距离影响
-for (const span of [100000, 10000, 1000, 100, 10, 1.0001]) {
-  assert.equal(selectStarPortrait([{ id: 'x', dLy: 0.01, visible: true }], span), null,
-    `${span} 光年档即使贴脸也不能显球`);
-}
+assert.equal(selectStarPortrait(many, 1e-6), 'star0');
+assert.equal(selectStarPortrait(many, 1e5), null, '大视野必须零球');
+assert.equal(selectStarPortrait([{ id: 'x', dLy: 9 * rSunLy, radiusLy: rSunLy, visible: true }], 1.0001), null);
+assert.equal(selectStarPortrait([{ id: 'hidden', dLy: 9 * rSunLy, radiusLy: rSunLy, visible: false }], 1e-6), null);
+assert.equal(selectStarPortrait([], 1e-6), null);
+assert.equal(selectStarPortrait([{ id: 'far', dLy: 4.24, radiusLy: rSunLy, visible: true }], 1e-6), null);
 
-// ---- 球径：绝对封顶、与档位无关、不会钻进球内 ----
-assert.ok(starSizeFactor(764) > starSizeFactor(1) * 2, '红超巨星应明显大于太阳');
-assert.ok(starSizeFactor(0.154) < starSizeFactor(1), '红矮星应小于太阳');
-assert.ok(starSizeFactor(1e6) <= 3, '半径系数必须封顶');
-const dUnits = PORTRAIT_CLOSEUP_LY * UNITS_PER_LY;
-const rSunLy = portraitRadius(1, dUnits, UNITS_PER_LY) / UNITS_PER_LY;
-const rBigLy = portraitRadius(764, dUnits, UNITS_PER_LY) / UNITS_PER_LY;
-const rSmallLy = portraitRadius(0.154, dUnits, UNITS_PER_LY) / UNITS_PER_LY;
-assert.ok(rSunLy > 0 && Number.isFinite(rSunLy));
-assert.ok(rBigLy > rSunLy && rSmallLy < rSunLy, '球径仍要表达真实半径的相对大小');
-assert.ok(rBigLy <= PORTRAIT_MAX_RADIUS_LY, '最大的球也不能超过 0.05 光年');
-// 同一距离下换任何档位都不该改变球径（函数根本没有档位参数）
-const rA = portraitRadius(1, dUnits, UNITS_PER_LY);
-const rB = portraitRadius(1, dUnits, UNITS_PER_LY);
-assert.equal(rA, rB, '球径不得随档位缩放');
-const nearD = 0.01 * UNITS_PER_LY;
-assert.ok(portraitRadius(1, nearD, UNITS_PER_LY) <= nearD * 0.42 + 1e-18,
-  '相机贴到球边时必须按距离封顶，不能钻进球内');
-
-// ---- 真实构建一颗恒星特写 ----
+// ---- 3. 真实构建一颗恒星特写 ----
 const p = createStarPortrait({ id: 'proxima', color: 0xff8a6a, radiusSun: 0.154, size: 0.07 });
 assert.equal(p.group.visible, false, '近景球默认必须隐藏');
 assert.equal(p.group.children.length, 3, '应包含光球 + 色球亮环 + 日冕');
-assert.ok(p.sphere.isMesh && p.sphere.geometry.type === 'SphereGeometry', '光球必须是球体');
+assert.ok(p.sphere.isMesh && p.sphere.geometry.type === 'SphereGeometry');
 assert.ok(p.sphere.material.map, '光球必须有程序化米粒组织贴图');
-assert.equal(p.sphere.material.toneMapped, false, '恒星自发光不应被曝光压暗');
-assert.equal(p.sphere.userData.bodyId, 'proxima', '光球要带 bodyId 便于调试');
-p.group.scale.setScalar(0.5);
-assert.ok(Number.isFinite(p.group.scale.x));
+assert.equal(p.sphere.material.toneMapped, false);
+assert.equal(p.sphere.userData.bodyId, 'proxima');
+p.group.scale.setScalar(starRadiusUnits(0.154));
+assert.ok(Number.isFinite(p.group.scale.x) && p.group.scale.x > 0);
 
-// ---- 生产配置：恒星 / 星团 / 黑洞的分类必须自洽 ----
+// ---- 4. 生产配置：恒星 / 星团 / 黑洞的分类必须自洽 ----
 function toNodeModule(code) {
   return code
     .replace(/^import\s+\w+\s+from\s+'\/?images\/[^']+';\s*$/gm, (m) =>
@@ -136,7 +130,7 @@ const galaxy = galaxyMod.default;
 rmSync(TMP, { recursive: true, force: true });
 
 assert.ok(Math.abs(UNITS_PER_LY - 1 / LY_PER_KPC) < 1e-12,
-  'star-portrait.js 的换算必须与 galaxy.js 的 LY_PER_KPC 一致');
+  'zoom-ladder.js 的换算必须与 galaxy.js 的 LY_PER_KPC 一致');
 const main = readFileSync(resolve(SRC, 'main.js'), 'utf8');
 assert.ok(main.includes('def.star && !def.deepSky && Number.isFinite(def.radiusSun)'),
   'main.js 必须只给带真实半径的恒星挂近景球，否则 cosmos 页的星系锚点会被画成恒星');
@@ -144,100 +138,123 @@ const stars = galaxy.bodies.filter((b) => b.star && !b.deepSky);
 const showpieces = galaxy.bodies.filter((b) => b.deepSky);
 assert.ok(stars.length >= 19, `恒星近景球覆盖不足：只有 ${stars.length} 颗`);
 for (const b of stars) {
-  assert.ok(Number.isFinite(b.radiusSun) && b.radiusSun > 0,
-    `恒星 ${b.id} 缺少真实半径 radiusSun，近景球无法按真实比例缩放`);
+  assert.ok(Number.isFinite(b.radiusSun) && b.radiusSun > 0, `恒星 ${b.id} 缺少真实半径`);
   assert.equal(b.fixedSize, 0.07, `恒星 ${b.id} 在银河系尺度上仍必须是一个 0.07 的点`);
 }
 for (const b of showpieces) {
   assert.ok(['nebula', 'remnant', 'blackhole', 'cluster'].includes(b.deepSky.kind),
-    `${b.id} 的展示物类型未知: ${b.deepSky.kind}`);
+    `${b.id} 的展示物类型未知`);
 }
-assert.ok(showpieces.some((b) => b.deepSky.kind === 'cluster'), '疏散星团应有点云星团展示物');
-assert.ok(showpieces.some((b) => b.id === 'sagA' && b.deepSky.kind === 'blackhole'),
-  '人马座 A* 放大后应是黑洞而非恒星球体');
-assert.equal(stars.find((b) => b.id === 'sun')?.radiusSun, 1, '太阳必须是近景球的大小基准');
+assert.ok(showpieces.some((b) => b.deepSky.kind === 'cluster'));
+assert.ok(showpieces.some((b) => b.id === 'sagA' && b.deepSky.kind === 'blackhole'));
+assert.equal(stars.find((b) => b.id === 'sun')?.radiusSun, 1);
 
-// ---- 真实几何：6 档相机距离 × 19 颗恒星的真实坐标 ----
-// 与 main.js tierCamDist() 同款：radiusKpc / tan(fov/2) * fitMargin，fov=45°、fitMargin=1.25
-const camDistOf = (tier) => tier.radiusKpc / Math.tan((45 * Math.PI) / 360) * 1.25;
-const dir = (() => {
-  const v = [0, 0.62, 1], n = Math.hypot(...v);
-  return v.map((x) => x / n);
-})();
+// ---- 5. 真实几何：6 档相机距离 × 真实恒星坐标，前 5 档必须零球 ----
+const camDistOf = (tier) => tier.radiusKpc / Math.tan((45 * Math.PI) / 360) * 1.25; // kpc
+const dir = (() => { const v = [0, 0.62, 1], n = Math.hypot(...v); return v.map((x) => x / n); })();
 const starDefs = stars.filter((b) => Array.isArray(b.galaxyPos));
-/** 相机停在 center 外 distKpc 处，返回每颗恒星距相机的真实光年数 */
 function candidatesAt(center, distKpc) {
   const cam = center.map((c, j) => c + dir[j] * distKpc);
   return starDefs.map((b) => ({
     id: b.id,
     dLy: Math.hypot(...b.galaxyPos.map((v, j) => v - cam[j])) * LY_PER_KPC,
+    radiusLy: starRadiusLy(b.radiusSun),
     visible: true,
   }));
 }
-const sunPos = galaxy.sunPos;
 let widest = '';
 for (let i = 0; i < SCALE_TIERS.length - 1; i++) {
   const tier = SCALE_TIERS[i];
-  assert.equal(tierAllowsPortrait(tier.spanLy), false, `${tier.label} 不该允许球体`);
-  // 1× = 档位基准距离；0.5× = 用户滚轮放大；0.08× = controls.minDistance（缩到最内）
   for (const zoom of [1, 0.5, 0.08]) {
-    const cs = candidatesAt(sunPos, camDistOf(tier) * zoom);
-    assert.equal(selectStarPortrait(cs, tier.spanLy), null,
+    const distKpc = camDistOf(tier) * zoom;
+    const span = effectiveSpanLy(distKpc * LY_PER_KPC, 45);
+    assert.equal(selectStarPortrait(candidatesAt(galaxy.sunPos, distKpc), span), null,
       `${tier.label} 缩到 ${zoom}× 时出现了球体（会互相重叠）`);
-    assert.ok(cs.every((c) => portraitOpacity(c.dLy) === 0 || !tierAllowsPortrait(tier.spanLy)),
-      `${tier.label} 缩到 ${zoom}× 时不该有淡入`);
   }
   widest += `${tier.short} `;
 }
-const innerTier = SCALE_TIERS[SCALE_TIERS.length - 1];
-assert.equal(tierAllowsPortrait(innerTier.spanLy), true);
-// 1 光年档里，相机在太阳旁 0.45 光年：只有太阳进入 1 光年内
-const csSun = candidatesAt(sunPos, PORTRAIT_CLOSEUP_LY * UNITS_PER_LY);
-assert.equal(selectStarPortrait(csSun, innerTier.spanLy), 'sun', '1 光年档应只显太阳这一颗球');
-assert.equal(csSun.filter((c) => starWithinPortrait(c.dLy)).length, 1,
-  '1 光年视野里不该同时有两颗恒星');
-// 外链直达比邻星：比邻星与南门二实际只隔约 0.21 光年，两者可能都进入 1 光年内，
-// 这时「唯一性」是唯一能保证不出现两个球的东西。
-const prox = starDefs.find((b) => b.id === 'proxima');
-assert.ok(prox, '缺少比邻星配置');
-const csProx = candidatesAt(prox.galaxyPos, PORTRAIT_CLOSEUP_LY * UNITS_PER_LY);
-assert.equal(selectStarPortrait(csProx, innerTier.spanLy), 'proxima',
-  '外链直达比邻星必须显比邻星，不能显成别的恒星');
-const within = csProx.filter((c) => starWithinPortrait(c.dLy));
-const nearestOther = Math.min(...csProx.filter((c) => c.id !== 'proxima').map((c) => c.dLy));
-assert.ok(PORTRAIT_MAX_RADIUS_LY * 2 < nearestOther,
-  `球直径 ${PORTRAIT_MAX_RADIUS_LY * 2} ly 必须小于最近邻恒星 ${nearestOther.toFixed(3)} ly`);
 
-// ---- main.js 接线 ----
+// ---- 6. 内容驱动阶梯：太阳逐档有变化，心宿二跳过空白档 ----
+function neighborsOf(id) {
+  const me = galaxy.bodies.find((b) => b.id === id);
+  assert.ok(me?.galaxyPos, `缺少 ${id} 的坐标`);
+  return galaxy.bodies
+    .filter((b) => b.id !== id && Array.isArray(b.galaxyPos))
+    .map((b) => Math.hypot(...b.galaxyPos.map((v, i) => v - me.galaxyPos[i])) * LY_PER_KPC)
+    .filter((d) => Number.isFinite(d) && d > 0)
+    .sort((a, b) => a - b);
+}
+function ladderOf(id) {
+  const def = galaxy.bodies.find((b) => b.id === id);
+  const close = closeupDistanceLy(def.radiusSun);
+  const fade = revealDistanceLy(def.radiusSun) * 1.2;
+  const stops = zoomStops(close, neighborsOf(id), { waypoints: [fade] });
+  assert.ok(Math.abs(stops[0] - close) < close * 1e-9, `${id} 的第一个停靠点必须是真实特写`);
+  assert.ok(Math.abs(stops[1] - fade) < fade * 1e-9, `${id} 的第二个停靠点应是「球淡成一个点」`);
+  for (let i = 1; i < stops.length; i++) {
+    assert.ok(stops[i] > stops[i - 1], `${id} 的停靠点必须严格升序`);
+  }
+  return {
+    def, close, stops,
+    band: stops.filter((s) => s >= 1 && s <= 100),
+    firstNeighbor: stops.find((s) => s > 100),
+  };
+}
+const sunLadder = ladderOf('sun');
+const antaresLadder = ladderOf('antares');
+const betelLadder = ladderOf('betelgeuse');
+const proxLadder = ladderOf('proxima');
+assert.ok(sunLadder.band.length >= 3,
+  `太阳在 1/10/100 光年应有多个有内容的尺度，实际 ${sunLadder.band.length}`);
+assert.equal(antaresLadder.band.length, 0,
+  '心宿二在 1/10/100 光年没有任何邻居，这三个空档必须被跳过');
+assert.equal(betelLadder.band.length, 0,
+  '参宿四在 1/10/100 光年同样必须跳过');
+assert.ok(antaresLadder.firstNeighbor > 100 && antaresLadder.firstNeighbor < 5000,
+  '心宿二缩小时应直接回到几百~几千光年，看到其它天体');
+assert.ok(betelLadder.firstNeighbor > 100 && betelLadder.firstNeighbor < 5000);
+assert.ok(proxLadder.stops.find((s) => s >= 0.1 && s < 1),
+  '比邻星与南门二只隔 0.21 光年，应有一个 <1 光年的停靠点');
+// 跳档方向：特写 → 球淡成点 → 第一个有邻居的尺度；往内逐级返回
+assert.equal(nextZoomStop(antaresLadder.stops, antaresLadder.close, 1), antaresLadder.stops[1]);
+assert.equal(nextZoomStop(antaresLadder.stops, antaresLadder.stops[1], 1),
+  antaresLadder.firstNeighbor, '心宿二往外第二格必须直接跳到有邻居的尺度');
+assert.equal(nextZoomStop(antaresLadder.stops, antaresLadder.stops[1], -1), antaresLadder.close);
+assert.equal(nextZoomStop(antaresLadder.stops, antaresLadder.stops.at(-1), 1), null);
+assert.equal(nextZoomStop(sunLadder.stops, sunLadder.stops[1], 1), sunLadder.stops[2]);
+for (const s of antaresLadder.stops) {
+  assert.ok(!(s >= 1 && s <= 100), '心宿二不该停在空白档');
+}
+
+// ---- 7. main.js 接线 ----
 for (const needle of [
   "from './star-portrait.js'", 'createStarPortrait(def)', 'updateStarPortraits(dtSec)',
-  'setStarCloseup(def, obj)',
-  'selectStarPortrait(_portraitCandidates, TIERS[currentTier].spanLy)',
-  'dLy: dUnits / UNITS_PER_LY',
-  'portraitRadius(p.def.radiusSun, c.dUnits, UNITS_PER_LY)',
-  'PORTRAIT_CLOSEUP_LY * UNITS_PER_LY',
-  "applyTier(inner, { instant: true, focus: wp })",
-  'updateTierVisibility(inner)',
-  'const fPoint = Math.pow(10, -i);',
-  'const forceId = follow?.id ?? selected?.id ?? null;',
-  'visiblePortraits:',
-  'closeups: [...starPortraits.entries()]',
+  'setStarCloseup(def, obj)', 'beginFocusLadder(def, obj)', 'zoomStops(',
+  'nextZoomStop(focusStops', 'flyFocusTo(stop)', 'applyFocusAnchorScale(',
+  'waypoints: [revealDistanceLy(def.radiusSun) * 1.2]',
+  'effectiveSpanLy(dCamLy, camera.fov)', 'starRadiusUnits(def.radiusSun)',
+  'closeupDistanceLy(def.radiusSun)', 'updateTierVisibility(currentTier, span)',
+  'spanOverride != null && focusId', 'visibleBodies:', 'focusStops: focusStops',
 ]) {
-  assert.ok(main.includes(needle), `main.js 缺少恒星近景接线: ${needle}`);
+  assert.ok(main.includes(needle), `main.js 缺少真实尺度接线: ${needle}`);
 }
 for (const banned of [
-  'tierFactorOf', 'portraitOpacity(d, base)', 'portraitRadius(p.def.size',
-  'tierCamDist(currentTier) * 0.45',
+  'PORTRAIT_CLOSEUP_LY', 'PORTRAIT_MAX_RADIUS_LY', 'tierFactorOf', 'starSizeFactor',
+  'tierCamDist(currentTier) * 0.45', 'portraitOpacity(c.dLy)',
+  'selectStarPortrait(_portraitCandidates, TIERS[currentTier].spanLy)',
 ]) {
-  assert.ok(!main.includes(banned), `main.js 仍残留旧的相对尺度判定: ${banned}`);
+  assert.ok(!main.includes(banned), `main.js 仍残留旧的示意尺度判定: ${banned}`);
 }
-// 近景更新必须紧跟在 controls.update() 之后（相机位姿定下来才判距离）
 const updateAt = main.indexOf('controls.update();');
 const portraitAt = main.indexOf('updateStarPortraits(dtSec);', updateAt + 1);
-assert.ok(updateAt > 0 && portraitAt > updateAt && portraitAt - updateAt < 120,
+assert.ok(updateAt > 0 && portraitAt > updateAt && portraitAt - updateAt < 140,
   '近景 LOD 必须紧跟在 controls.update() 之后执行');
+const portraitSrc = readFileSync(resolve(SRC, 'star-portrait.js'), 'utf8');
+assert.ok(portraitSrc.includes("export * from './zoom-ladder.js'"),
+  '尺度数学必须集中在 zoom-ladder.js');
 
-console.log(`恒星近景 LOD 校验通过：${stars.length} 颗恒星球 / ${showpieces.length} 个非恒星展示物；`
-  + `「${widest.trim()}」各档（含缩到 minDistance）零球；1 光年档唯一球，`
-  + `球径 ≤ ${PORTRAIT_MAX_RADIUS_LY} ly，最近邻 ${nearestOther.toFixed(3)} ly，`
-  + `比邻星特写时 ${within.length} 颗进入 1 光年内但只显 1 颗。`);
+console.log(`恒星真实尺度校验通过：${stars.length} 颗恒星球 / ${showpieces.length} 个非恒星展示物；`
+  + `R☉=${SUN_RADIUS_LY.toExponential(3)} ly，特写 ${CLOSEUP_FACTOR}R；`
+  + `「${widest.trim()}」各档（含缩到 minDistance）零球；`
+  + `太阳 1~100 ly 有 ${sunLadder.band.length} 档内容，心宿二/参宿四 0 档`
+  + `（首个有邻居的尺度 ${antaresLadder.firstNeighbor.toFixed(0)} / ${betelLadder.firstNeighbor.toFixed(0)} ly）。`);

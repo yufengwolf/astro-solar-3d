@@ -13,7 +13,9 @@ import { buildCosmosField } from './cosmos-field.js';
 import { buildGalaxyPortrait } from './galaxy-portrait.js';
 import {
   createStarPortrait, portraitRadius, portraitOpacity, selectStarPortrait,
-  UNITS_PER_LY, PORTRAIT_CLOSEUP_LY,
+  UNITS_PER_LY, starRadiusLy, starRadiusUnits,
+  closeupDistanceLy, revealDistanceLy, effectiveSpanLy,
+  zoomStops, nextZoomStop,
 } from './star-portrait.js';
 import {
   resolveCurrentId, parentHref, childHref,
@@ -23,7 +25,7 @@ import { mountUniverseNav } from './nav.js';
 import { resolveBody, bodyHref, carryParams, currentPageFile } from './deeplinks.js';
 import { orbitAngle, coRotate } from './follow.js';
 import {
-  t, distText, tierLabel, tierShort, systemName, groupName,
+  t, distText, tierLabel, tierShort, spanText, systemName, groupName,
   viewName, infoKey, infoValue, bodyName, shortName,
 } from './i18n.js';
 
@@ -959,20 +961,37 @@ export function start(system) {
 
   // 每档只显示「距离尺度匹配」的天体：太远的在画面外，太近的与太阳重合。
   // 窗口刻意留重叠，切档时天体渐次出现/退场，不会整屏跳变。
-  function updateTierVisibility(i) {
+  function updateTierVisibility(i, spanOverride = null) {
     if (!TIERS) return;
-    const span = TIERS[i].spanLy;
+    const span = spanOverride ?? TIERS[i].spanLy;
     const visibleGroups = new Set();
     // 跟随 / 选中的天体要放行：1 光年档的窗口只有 [0.005, 1.5] 光年，会把
     // 4.24 光年外的比邻星过滤掉，但外链直达时镜头就贴在它旁边。
     // 只放行这**一颗**，不会让大档里挤成一堆的邻近恒星重新涌回来。
-    const forceId = follow?.id ?? selected?.id ?? null;
+    const focusId = follow?.id ?? null;
+    const forceId = focusId ?? selected?.id ?? null;
+    // 跟随态的窗口改以「当前焦点」为原点，按真实三维距离过滤。原来用 def.dLy
+    // （距太阳的距离），焦点移到心宿二后会把其它天体全判出画面，于是 1 / 10 /
+    // 100 光年档永远只剩孤零零一个点。未跟随时保持原 6 档行为不变。
+    let origin = null;
+    const wp = new THREE.Vector3();
+    if (spanOverride != null && focusId && byId.has(focusId)) {
+      scene.updateMatrixWorld(true);
+      origin = new THREE.Vector3();
+      byId.get(focusId).group.getWorldPosition(origin);
+    }
     for (const [sid, node] of byId) {
-      const dLy = node.def?.dLy;
-      // 下限取视野的 0.5%：比这更近的天体在该档里必然与太阳/彼此重合，
-      // 显示出来只会误导（例如 10 万光年档列出 4 光年的比邻星）。
-      const show = sid === forceId || dLy == null || dLy === 0 ||
-        (dLy >= span * 0.005 && dLy <= span * 1.5);
+      let show;
+      if (origin) {
+        node.group.getWorldPosition(wp);
+        show = sid === focusId || wp.distanceTo(origin) / UNITS_PER_LY <= span * 0.75;
+      } else {
+        const dLy = node.def?.dLy;
+        // 下限取视野的 0.5%：比这更近的天体在该档里必然与太阳/彼此重合，
+        // 显示出来只会误导（例如 10 万光年档列出 4 光年的比邻星）。
+        show = sid === forceId || dLy == null || dLy === 0 ||
+          (dLy >= span * 0.005 && dLy <= span * 1.5);
+      }
       if (node.group) node.group.visible = show;
       const row = navRows.get(sid);
       if (row) {
@@ -1082,31 +1101,104 @@ export function start(system) {
     applyTierScale(currentTier);
   }
 
-  // ---------- 恒星近景 LOD：大尺度永远只有点，1 光年内最多一颗球 ----------
-  // 上一版用「相机距离 / 本档取景距离」的相对比例判定，结果 1 万光年档稍一滚轮
-  // 所有恒星就一起淡入，且球径随粗档膨胀到几百光年，十几颗球叠成一团。
-  // 现在按 star-portrait.js 的三条硬规则：档位 ≤ 1 光年、相机距恒星 < 1 光年、
-  // 每帧只留离相机最近的一颗（恒星彼此至少隔几光年，不可能同时看见两个球面）。
+  // ---------- 恒星近景：真实半径 + 角尺寸显隐 + 内容驱动的缩放阶梯 ----------
+  // 球半径就是真实半径（R☉ = 7.3535e-8 光年），不再是 0.05 光年的示意封顶。
+  // 于是「大尺度只能是点」「一帧最多一颗球」都由物理尺度自动成立：
+  // 恒星至少隔 0.21 光年，而显形门槛只有 60×R_max ≈ 0.0034 光年。
   const _portraitWp = new THREE.Vector3();
+  const _focusWp = new THREE.Vector3();
   const _portraitCandidates = [];
+  let focusStops = null;       // 聚焦恒星时的「有内容的尺度」停靠点（光年）
+  let focusRadiusLy = null;    // 当前聚焦恒星的真实半径（光年）
+  let lastVisibilitySpan = 0;  // 相对上次更新可见性窗口时的视野跨度
+  let lastNear = -1;
+
+  /** 跟随态下锚点按屏幕空间恒定缩放：任何尺度都是一个点，不会遮住真实球面。 */
+  function applyFocusAnchorScale(dUnits) {
+    const point = Math.max(1e-15, dUnits * 0.0035);
+    for (const [, node] of byId) {
+      if (!node.def?.star || !node.def?.fixedSize) continue;
+      if (node.mesh) node.mesh.scale.setScalar(point);
+      if (node.halo) node.halo.scale.setScalar(point * 6);
+      if (node.pick) node.pick.scale.setScalar(point * 12);
+    }
+  }
+
+  /** 相机到焦点（跟随目标）的距离，光年。 */
+  function focusDistanceLy() {
+    return camera.position.distanceTo(controls.target) / UNITS_PER_LY;
+  }
+
+  /**
+   * 生成当前焦点的内容阶梯。停靠点 = 特写距离 + 每个「首次有其它天体入画」的距离，
+   * 空白数量级一律不补。太阳周围 4.24/5.96/8.6… 光年一串邻居，1/10/100 光年
+   * 都有变化；心宿二最近的邻居在几百光年外，那三档直接被跳过。
+   */
+  function beginFocusLadder(def, obj) {
+    if (!TIERS || !starPortraits.has(def.id)) { focusStops = null; focusRadiusLy = null; return; }
+    scene.updateMatrixWorld(true);
+    obj.getWorldPosition(_focusWp);
+    const wp = new THREE.Vector3();
+    const neighbors = [];
+    for (const [id, node] of byId) {
+      if (id === def.id || !node.group) continue;
+      node.group.getWorldPosition(wp);
+      const d = wp.distanceTo(_focusWp) / UNITS_PER_LY;
+      if (Number.isFinite(d) && d > 0) neighbors.push(d);
+    }
+    focusRadiusLy = starRadiusLy(def.radiusSun);
+    focusStops = zoomStops(closeupDistanceLy(def.radiusSun), neighbors, {
+      // 球刚淡成一个点的距离：往外缩一格到这里，再一格就回到有邻居的尺度，
+      // 不必在 9R→60R 之间连滚十几格，也不会凭空跳走一个还很醒目的球。
+      waypoints: [revealDistanceLy(def.radiusSun) * 1.2],
+    });
+    lastVisibilitySpan = 0;
+  }
+
+  /** 平滑飞到阶梯上的某个尺度：交给 updateFollow 的指数收敛，方向仍尊重用户拖拽。 */
+  function flyFocusTo(ly) {
+    if (!follow) return;
+    const dUnits = Math.max(1e-15, ly * UNITS_PER_LY);
+    const dir = camera.position.clone().sub(controls.target);
+    if (dir.lengthSq() < 1e-30) dir.set(0, 0.42, 1);
+    follow.want.copy(dir.normalize().multiplyScalar(dUnits));
+    isMoving = true;
+  }
+
+  /** 退出聚焦阶梯，回到未聚焦时的 6 档宏观浏览。 */
+  function leaveFocusLadder() {
+    const was = !!focusStops;
+    focusStops = null;
+    focusRadiusLy = null;
+    lastVisibilitySpan = 0;
+    lastNear = -1;
+    if (was && TIERS) applyTier(0, { instant: true });
+  }
+
   function updateStarPortraits(dtSec) {
     if (!starPortraits.size || !TIERS) return;
+    const dCamLy = focusDistanceLy();
+    const span = effectiveSpanLy(dCamLy, camera.fov);
     _portraitCandidates.length = 0;
     for (const [id, p] of starPortraits) {
       if (!p.node.group.visible) {
-        _portraitCandidates.push({ id, dLy: Infinity, dUnits: Infinity, visible: false });
+        _portraitCandidates.push({ id, dLy: Infinity, radiusLy: 0, dUnits: Infinity, visible: false });
         continue;
       }
       p.node.group.getWorldPosition(_portraitWp);
       const dUnits = camera.position.distanceTo(_portraitWp);
-      // 场景单位是 kpc，除以「每光年多少单位」得到真实光年数
-      _portraitCandidates.push({ id, dLy: dUnits / UNITS_PER_LY, dUnits, visible: true });
+      _portraitCandidates.push({
+        id, dUnits,
+        dLy: dUnits / UNITS_PER_LY,
+        radiusLy: starRadiusLy(p.def.radiusSun),
+        visible: true,
+      });
     }
-    const winner = selectStarPortrait(_portraitCandidates, TIERS[currentTier].spanLy);
+    const winner = selectStarPortrait(_portraitCandidates, span);
     for (const c of _portraitCandidates) {
       const p = starPortraits.get(c.id);
       if (c.id !== winner) { p.group.visible = false; continue; }
-      const a = portraitOpacity(c.dLy);
+      const a = portraitOpacity(c.dLy, c.radiusLy);
       if (a < 0.01) { p.group.visible = false; continue; }
       p.group.visible = true;
       p.group.scale.setScalar(portraitRadius(p.def.radiusSun, c.dUnits, UNITS_PER_LY));
@@ -1115,20 +1207,46 @@ export function start(system) {
       // 加法混合下 opacity 不可靠，色球 / 日冕直接按可见阈值开关
       p.rim.visible = p.corona.visible = a > 0.15;
     }
+
+    if (!focusStops) return;
+    // 跟随态：锚点恒为屏幕空间的点；近裁剪面随真实半径收缩，否则球会被裁掉。
+    applyFocusAnchorScale(dCamLy * UNITS_PER_LY);
+    const near = Math.max(1e-15, focusRadiusLy * UNITS_PER_LY * 0.02);
+    if (Math.abs(near - lastNear) > near * 0.05) {
+      camera.near = near;
+      camera.far = 200;
+      camera.updateProjectionMatrix();
+      lastNear = near;
+    }
+    // 可见性窗口按「到焦点的真实距离 + 当前有效视野」更新：缩小时邻居会渐次出现。
+    if (!lastVisibilitySpan || Math.abs(span - lastVisibilitySpan) > lastVisibilitySpan * 0.03) {
+      lastVisibilitySpan = span;
+      updateTierVisibility(currentTier, span);
+      updateScaleBarUI(currentTier, span);
+    }
   }
 
-  /** 外链 / hash 直达：强制落到 1 光年档、镜头停在 0.45 光年外，打开就看见球面。 */
+  /** 聚焦恒星（菜单 / 3D 拾取 / 外链 / hash 共用）：自动落到 9×真实半径的特写。 */
   function setStarCloseup(def, obj) {
     if (!TIERS || !starPortraits.has(def.id)) return;
     const wp = new THREE.Vector3();
     obj.getWorldPosition(wp);
     const inner = TIERS.length - 1;
-    // 只有最内档允许球体；顺带把观察焦点从太阳移到这颗恒星本身。
     if (currentTier !== inner) applyTier(inner, { instant: true, focus: wp });
-    else updateTierVisibility(inner);  // 让被 dLy 窗口过滤掉的目标重新可见
+    beginFocusLadder(def, obj);
+
+    const radiusU = starRadiusUnits(def.radiusSun);
+    const closeU = closeupDistanceLy(def.radiusSun) * UNITS_PER_LY;
+    controls.minDistance = radiusU * 1.25;   // 不允许钻进球里
+    controls.maxDistance = focusStops[focusStops.length - 1] * UNITS_PER_LY * 1.3;
+    camera.near = Math.max(1e-15, radiusU * 0.02);
+    camera.far = 200;
+    camera.updateProjectionMatrix();
+    lastNear = camera.near;
+
     const dir = camera.position.clone().sub(controls.target);
-    if (dir.lengthSq() < 1e-18) dir.set(0, 0.42, 1);
-    const want = dir.normalize().multiplyScalar(PORTRAIT_CLOSEUP_LY * UNITS_PER_LY);
+    if (dir.lengthSq() < 1e-30) dir.set(0, 0.42, 1);
+    const want = dir.normalize().multiplyScalar(closeU);
     controls.target.copy(wp);
     camera.position.copy(wp).add(want);
     camera.lookAt(wp);
@@ -1137,6 +1255,11 @@ export function start(system) {
       follow.offset.copy(want);
       follow.lastPos.copy(wp);
     }
+    const span = effectiveSpanLy(closeupDistanceLy(def.radiusSun), camera.fov);
+    lastVisibilitySpan = span;
+    updateTierVisibility(inner, span);
+    updateScaleBarUI(inner, span);
+    applyFocusAnchorScale(closeU);
   }
 
   // 选中并飞向某个天体（菜单点击 / 3D 拾取共用）
@@ -1146,15 +1269,17 @@ export function start(system) {
     if (!def || !obj) return;
     selected = def;
     if (TIERS) {
-      // 银河系页：点菜单里的天体 = 自动切到它所属的比例尺档位，并把观察焦点移过去。
-      // 不再用旧的「贴到 2 kpc 外看示意物」特写，背景与周围天体始终都在。
       const wp = new THREE.Vector3();
       obj.getWorldPosition(wp);
-      // 档位页不飞特写：保持当前取景距离，但焦点跟着天体走
       beginFollow(def, obj, null, 'keep');
-      applyTier(def.tier ?? currentTier, { instant: true, focus: wp });
-      // 菜单点击保留档位全景（上下文优先）；外链 / hash 直达则推进到近景特写。
-      if (opts.close) setStarCloseup(def, obj);
+      if (starPortraits.has(def.id)) {
+        // 点恒星（菜单 / 3D 拾取 / 外链 / hash 都一样）= 自动把比例尺调到
+        // 能清晰看到这颗球的真实尺度（9 倍真实半径），不再停在几光年外的针尖上。
+        setStarCloseup(def, obj);
+      } else {
+        // 星云 / 星团 / 黑洞仍走档位示意展示物，保持原来的上下文浏览手感。
+        applyTier(def.tier ?? currentTier, { instant: true, focus: wp });
+      }
     } else {
       focusOn(def, obj);
     }
@@ -1292,10 +1417,18 @@ export function start(system) {
   }
 
   function stopFollow() {
+    const wasLadder = !!focusStops;
     follow = null;
     isMoving = false;
+    focusStops = null;
+    focusRadiusLy = null;
+    lastVisibilitySpan = 0;
+    lastNear = -1;
     followBadge.style.display = 'none';
     refreshPause();
+    // 从 9R 的真实特写退出时，得把 near / minDistance / 锚点尺寸 / 可见性窗口
+    // 全部恢复成宏观 6 档，否则会卡在一个 1e-13 的近裁剪面上看全景。
+    if (wasLadder && TIERS) applyTier(0, { instant: true });
   }
 
   const _followPos = new THREE.Vector3();
@@ -1401,12 +1534,13 @@ export function start(system) {
     if (settings.bodyExaggeration > 1) {
       detail += (detail ? '\n' : '') + t('infoZoom', settings.bodyExaggeration);
     }
-    // 恒星：写出真实半径，并在还是「一个点」时提示继续放大可看到球面
+    // 恒星：写出真实半径。特写时 showInfo() 往往比下一帧的 updateStarPortraits()
+    // 先跑，此时球的 visible 还是 false，不能拿它当「现在是一个点」的判据。
     if (def.radiusSun != null) {
       detail += (detail ? '\n' : '') + t('starRadius', def.radiusSun);
-      if (!starPortraits.get(def.id)?.group.visible) {
-        detail += '\n' + t('starCloseupHint');
-      }
+      const inCloseup = !!focusStops && follow?.id === def.id
+        && focusDistanceLy() <= revealDistanceLy(def.radiusSun) * 1.2;
+      detail += '\n' + t(inCloseup ? 'starCloseupNote' : 'starCloseupHint');
     }
     if (follow) detail += (detail ? '\n' : '') + t('followingNote', settings.followMotion);
     detailEl.innerText = detail;
@@ -1428,8 +1562,8 @@ export function start(system) {
     if (box) box.style.display = 'none';
     setActiveShowcase(null);
     stopFollow();
-    // 银河系页保留当前比例尺档位，别把用户刚刚切到的尺度弹回全景；
-    // 小档继续保持冻结，防止银盘自转把近邻恒星甩出画面。
+    // 未聚焦时保留当前宏观档位；若刚才是恒星特写，stopFollow 已把 near /
+    // 锚点尺寸 / 可见性窗口一并恢复并回到全景档。
     if (TIERS) return;
     isZoomingOut = true;
     controls.target.set(...homeTarget);
@@ -1741,7 +1875,11 @@ export function start(system) {
       btn.textContent = tierShort(tier);
       btn.title = t('tierTitle', tierLabel(tier));
       btn.dataset.tier = String(i);
-      btn.onclick = () => applyTier(i, { instant: true });
+      btn.onclick = () => {
+        // 点比例条 = 退出恒星特写，回到未聚焦的宏观 6 档浏览
+        if (focusStops) stopFollow();
+        applyTier(i, { instant: true });
+      };
       row.appendChild(btn);
     });
     bar.appendChild(row);
@@ -1752,13 +1890,18 @@ export function start(system) {
     document.body.appendChild(bar);
     scaleBar = bar;
   }
-  function updateScaleBarUI(i) {
+  function updateScaleBarUI(i, spanOverride = null) {
     if (!scaleBar) return;
     const b = scaleBar.querySelector('.sb-label b');
-    if (b) b.textContent = tierLabel(TIERS[i]);
+    // 恒星特写时显示当前真实视野（AU / 公里），而不是写死的档位标签
+    if (b) b.textContent = spanOverride != null
+      ? t('focusSpan', spanText(spanOverride))
+      : tierLabel(TIERS[i]);
     for (const btn of scaleBar.querySelectorAll('.sb-tier')) {
-      btn.classList.toggle('active', Number(btn.dataset.tier) === i);
+      btn.classList.toggle('active', spanOverride == null && Number(btn.dataset.tier) === i);
     }
+    const hint = scaleBar.querySelector('.sb-hint');
+    if (hint) hint.textContent = t(spanOverride != null ? 'focusScaleHint' : 'scaleHint');
   }
   buildScaleBar();
 
@@ -1874,6 +2017,17 @@ export function start(system) {
     // dolly 抵消，相机距离永远到不了边界（实测缩小到顶 60 次都没切回上一档）。
     const d = camera.position.distanceTo(controls.target);
     if (TIERS) {
+      // 聚焦恒星：按「有内容的尺度」阶梯跳，空白数量级已被 zoomStops 剔除。
+      // 心宿二周围几百光年内没有别的天体，从特写往外缩会直接回到能看到邻居的
+      // 尺度，不会在 1 / 10 / 100 光年这三个空档里对着孤零零一个点发呆；
+      // 太阳周围 4.24 / 5.96 / 8.6… 光年一串邻居，阶梯自然逐档有变化。
+      if (follow && focusStops) {
+        const stop = nextZoomStop(focusStops, focusDistanceLy(), e.deltaY > 0 ? 1 : -1);
+        if (stop != null) { flyFocusTo(stop); return; }
+        // 已到最外停靠点还往外滚 → 退出特写，回到未聚焦的宏观 6 档全景
+        if (e.deltaY > 0) { stopFollow(); return; }
+        return;  // 最内特写区保留 OrbitControls 的连续放大，直到 minDistance
+      }
       const base = tierCamDist(currentTier);
       if (e.deltaY < 0 && d <= base / 10) {
         if (currentTier < TIERS.length - 1) applyTier(currentTier + 1, { instant: true });
@@ -1906,9 +2060,15 @@ export function start(system) {
           followMotion: settings.followMotion,
           camera: camera.position.toArray(),
           target: controls.target.toArray(),
-          // 恒星近景 LOD：真实浏览器 / CDP 用来验证「大档零球、小档最多一颗」
+          // 恒星近景 LOD：真实浏览器 / CDP 用来验证「大档零球、特写唯一球」
           portraitCount: starPortraits.size,
-          portraitSpanLy: TIERS?.[currentTier]?.spanLy ?? null,
+          tierIndex: currentTier,
+          portraitSpanLy: effectiveSpanLy(focusDistanceLy(), camera.fov),
+          focusDistanceLy: focusDistanceLy(),
+          focusStops: focusStops ? [...focusStops] : null,
+          cameraNear: camera.near,
+          visibleBodies: [...byId.entries()]
+            .filter(([, n]) => n.group.visible).map(([id]) => id),
           visiblePortraits: [...starPortraits.values()].filter((p) => p.group.visible).length,
           closeups: [...starPortraits.entries()]
             .filter(([, p]) => p.group.visible)
