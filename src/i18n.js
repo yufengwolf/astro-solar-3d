@@ -58,7 +58,7 @@ const UI = {
     nameSun: '太阳',
     scaleLabel: '比例尺 · 一格 = ',
     scaleHint: '滚轮每跨 10× 自动切一档 · 也可直接点击',
-    focusScaleHint: '滚轮沿有内容的尺度缩放 · 点上方档位返回宏观 6 档',
+    focusScaleHint: '滚轮连续缩放不跳档 · 背景是三维的，拖动旋转即可换一批远星',
     tierTitle: (label) => `切到${label}视野`,
     unitLy: '光年',
     unitKpc: '千秒差距',
@@ -73,7 +73,10 @@ const UI = {
     // 恒星近景：放大后才出现的「类太阳」球体
     starRadius: (r) => `半径：约 ${r} 倍太阳半径（真实物理尺度，非示意球）`,
     starCloseupHint: '现在是「一个点」：继续放大到几十倍恒星半径，球面与日冕才会显形',
-    starCloseupNote: '真实尺度特写：往外缩会跳过空白尺度，回到能看到邻近天体的视野',
+    starCloseupNote: '真实尺度特写：往外连续缩放，远处天体始终留在三维背景里',
+    backdropNote: (n) => `三维背景：视野内还有 ${n} 个天体，最近的也在几光年外`,
+    backdropAnchor: (name, d) => `背景锚点：${name}（约 ${d} 外，此刻也在画面里）`,
+    backdropBtn: (i, total, n) => `换个背景 ${i}/${total} · 视野内 ${n} 个天体`,
     focusSpan: (s) => `当前视野 · ${s}`,
     // 宇宙层级导航
     navRoot: '宇宙遨游',
@@ -117,7 +120,7 @@ const UI = {
     nameSun: 'Sun',
     scaleLabel: 'Scale · one step = ',
     scaleHint: 'Scroll 10× to switch tier · or click a step',
-    focusScaleHint: 'Scroll through scales that have content · click a step to return to the 6 macro tiers',
+    focusScaleHint: 'Continuous zoom, no scale skipping · the sky is 3D: drag to bring other distant stars into the background',
     tierTitle: (label) => `View: ${label}`,
     unitLy: 'ly',
     unitKpc: 'kpc',
@@ -132,7 +135,10 @@ const UI = {
     // Close-up star portrait
     starRadius: (r) => `Radius: ~${r} solar radii (true physical size, not a sketch)`,
     starCloseupHint: 'Still a point: zoom in to within a few dozen stellar radii to reveal the photosphere and corona',
-    starCloseupNote: 'True-scale close-up: zooming out skips empty scales and returns to a field with nearby stars',
+    starCloseupNote: 'True-scale close-up: zoom out continuously; distant bodies stay in the 3D background',
+    backdropNote: (n) => `3D backdrop: ${n} other bodies share this view, the nearest several light-years away`,
+    backdropAnchor: (name, d) => `Backdrop anchor: ${name}, ~${d} away and still in this view`,
+    backdropBtn: (i, total, n) => `Change backdrop ${i}/${total} · ${n} bodies in view`,
     focusSpan: (s) => `View · ${s}`,
     // Cosmic hierarchy navigation
     navRoot: 'Cosmic Atlas',

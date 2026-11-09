@@ -25,13 +25,14 @@ src/
   deeplinks.js     天体 ID 解析与规范链接生成
   follow.js        跟随镜头的共转数学（纯函数）
   star-portrait.js 恒星光球 / 色球 / 日冕生成（尺度数学转出 zoom-ladder.js）
-  zoom-ladder.js   真实半径换算 / 角尺寸显隐 / 内容驱动缩放阶梯（纯数学，无 three）
+  zoom-ladder.js   真实半径换算 / 角尺寸显隐 / 唯一候选（纯数学，无 three）
+  backdrop.js      三维视锥投影 / 屏幕空间点尺寸 / 背景方位 / 连续缩放（纯数学）
   galaxy-portrait.js / portraits.js   星系自身形态
   main.js          场景编排：相机、光照、后处理、GUI、拾取、动画
   style.css
 static/            publicDir：运行时按相对路径加载的 glb + links.html / links.json
 scripts/gen-deeplinks.mjs  生成 pages / nodes / bodies 三层外链清单（prebuild 自动跑）
-scripts/check-*.mjs        尺度 / 彗星 / 宇宙层级 / 外链 / 跟随 / 恒星近景自检
+scripts/check-*.mjs        尺度 / 彗星 / 宇宙层级 / 外链 / 跟随 / 恒星近景 / 三维背景自检
 scripts/sync.mjs           一键构建 + 复制 dist 到本地静态站目录（可选）
 vite.base.js      多入口构建配置生成器（ENTRIES 注册表在这里）
 vite.config.js    全量构建
@@ -340,25 +341,27 @@ npm run check:comet   # 用生产代码验证：彗尾是否严格背离太阳�
 
 `go.html` 的 `body` 优先于 `node` 优先于 `page`，`lang` / `embed` / `scale` / `debug` 等参数原样透传。清单版本为 `2`（`pages` / `nodes` / `bodies`）；只加天体时改 `src/systems/*.js`，只加星系时改 `NODES`，跑一次 `npm run gen:links` 三层都会更新，`npm run check:deeplinks` 会比对注册表防止漏项。
 
-### 恒星真实尺度与内容驱动缩放
+### 恒星真实尺度与三维背景
 
-尺度数学全部集中在 `src/zoom-ladder.js`（纯函数、无 three / DOM，`check:stars` 直接 import 断言）：
+尺度数学分两个纯函数文件（无 three / DOM，`check:stars` 与 `check:backdrop` 直接 import 断言）：
+`src/zoom-ladder.js` 管「球有多大、什么时候显形」，`src/backdrop.js` 管「三维空间里谁看得见、点多大、镜头朝哪、怎么连续缩放」。
 
 - **真实半径**：R☉ = 6.957×10⁸ m = 7.3535×10⁻⁸ 光年；`starRadiusLy(r) = r × R☉`，`starRadiusUnits()` 再乘 `UNITS_PER_LY = 1/3261.56`。球半径线性、无压缩、无封顶，`portraitRadius()` 只在相机真钻进球内时按距离收缩。
 - **角尺寸显隐**：`portraitOpacity(dLy, radiusLy)` 用 `d/R` 判定，> 60R 纯点、≤ 12R 完全显形。`tierAllowsPortrait(effectiveSpanLy(d, fov))` 保留「视野 < 1 光年」护栏；最大恒星 60×764 R☉ 也只有 0.0034 光年，护栏自动满足。`selectStarPortrait()` 每帧只留 `d/R` 最小的一颗。
-- **自动特写**：`setStarCloseup()` 把相机放到 `closeupDistanceLy() = 9R`，同时把 `camera.near` 收到 `0.02 × 真实半径`（否则球被近裁剪面裁掉）、把 `controls.minDistance` 设为 `1.25R`、`maxDistance` 设为阶梯最外档 × 1.3。菜单点击 / 3D 拾取 / `?body=` / `hashchange` 走同一条路径。
-- **内容阶梯**：`beginFocusLadder()` 用 `byId` 的真实世界坐标算焦点到其它天体的三维距离，交给 `zoomStops(closeLy, neighbors, { waypoints: [revealLy*1.2] })`。停靠点只有特写、球淡成点、以及每个「首次有邻居入画」的距离（`d = D/0.4`，按 45° 视场垂直半视野取保守值），**不补 10 的整数次幂**。太阳在 1~100 光年有 4 档，心宿二 / 参宿四 0 档，首跳直接到 1249 / 786 光年。
-- **滚轮**：跟随态下 `nextZoomStop()` + `flyFocusTo()` 沿阶梯指数收敛；最外继续缩 `stopFollow()` 回宏观全景。未聚焦时完全走原来的 `applyTier()` 6 档逻辑（`check:stars` 断言前 5 档含缩到 `minDistance` 零球）。
-- **可见性窗口**：`updateTierVisibility(i, spanOverride)` 在跟随态以焦点为原点、按「到焦点的真实距离 ≤ 有效视野 × 0.75」过滤；未跟随时仍用「距太阳的 `dLy`」窗口。原来的写法会让焦点移到心宿二后其它天体全部消失，1 / 10 / 100 光年档永远只剩一个点。
-- **锚点 / near / 比例条**：`applyFocusAnchorScale()` 每帧按相机距离把所有锚点钳成屏幕空间恒定点；`updateScaleBarUI(i, span)` 特写时显示真实视野（`spanText()` 自动降级到 AU / 公里）与专属提示，档位按钮取消 active；退出时 `stopFollow()` → `applyTier(0)` 把 near / minDistance / 锚点 / 可见性全部复位。
+- **自动特写 + 背景方位**：`setStarCloseup()` 把相机放到 `closeupDistanceLy() = 9R`，`camera.near` 收到 `0.02 × 真实半径`、`controls.minDistance = 1.25R`。同时 `buildBackdrops()` 用 `byId` 的真实世界坐标喂给 `backdropOptions()`，返回若干条按「视锥内远处天体权重和」排序的视线；相机站到该方向的反侧（`standDirection()`），于是远处天体落在焦点背后入画。菜单点击 / 3D 拾取 / `?body=` / `hashchange` 走同一条路径。
+- **可见性 = 视锥**：`updateBackdropVisibility()` 每帧用 `projectToNdc()` 判定，与「到焦点多远 / 当前哪档比例尺」无关。三维空间里 1 光年视野照样看得见 550 光年外的太阳；旧版按 `距离 ≤ 视野跨度` 过滤正是「小尺度只剩一个孤点」的根因。跟随态左侧菜单保留全部条目，旋转镜头时不会闪。
+- **屏幕空间点尺寸**：`applyFocusAnchorScale()` 每帧用 `pointWorldSize(D_i, fov, H, px)` 按**每颗天体自身**的相机距离反算，因此远近都是恒定像素；太阳作为方向锚额外 ×1.7 提亮。
+- **连续缩放**：滚轮走 `continuousZoom()`（固定 ×2.4 / 格）→ `flyFocusTo()` 指数收敛，与邻居距离无关，1 / 10 / 100 光年都能停；`controls.enableZoom = false` 避免 OrbitControls 双重 dolly，`setContinuousZoomRange()` 同步放宽它的 min/max clamp。缩到 10 万光年 `stopFollow()` 回宏观 6 档；未聚焦时完全走原来的 `applyTier()` 逻辑（`check:stars` 断言前 5 档含缩到 `minDistance` 零球）。
+- **锚点 / near / 比例条**：`updateScaleBarUI(i, span)` 特写时显示真实视野（`spanText()` 自动降级到 AU / 公里）；「换个背景」按钮调用 `cycleBackdrop()` 轮换方位，信息卡点名背景锚点与真实距离；退出时 `stopFollow()` → `applyTier(0)` 把 near / minDistance / 锚点 / 可见性全部复位。
 - 疏散星团 / 星云 / 超新星遗迹 / 黑洞仍走 `deepSky.kind` 的既有展示物，不挂恒星球；`cosmos.html` 的星系锚点带 `star:true` 但没有 `radiusSun`，被硬门槛排除。
-- `?debug=1` 暴露 `focusStops` / `focusDistanceLy` / `portraitSpanLy` / `cameraNear` / `visibleBodies` / `visiblePortraits` / `closeups[].radiusLy`，供 CDP 真机验证。
+- `?debug=1` 暴露 `closeup`（含各方位入画名单）/ `backdropDir` / `backdropCount` / `distantVisible`（含真实距离与 NDC）/ `zoomMode` / `focusDistanceLy` / `cameraNear` / `visibleBodies` / `closeups[].radiusLy`，供 CDP 真机验证。
 
 改动后至少跑：
 
 ```bash
 npm run check && npm run check:comet && npm run check:universe \
-  && npm run check:deeplinks && npm run check:follow && npm run check:stars && npm run build
+  && npm run check:deeplinks && npm run check:follow \
+  && npm run check:stars && npm run check:backdrop && npm run build
 ```
 
 ---

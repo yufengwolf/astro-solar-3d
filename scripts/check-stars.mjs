@@ -5,8 +5,8 @@
  *  2) 单位换算与角尺寸显隐：R☉ → 光年 → 场景单位，球径就是真实半径，
  *     「大尺度只能是点」「一帧最多一颗球」由物理尺度自动成立；
  *  3) 用 galaxy.js 的**真实 6 档相机距离 + 真实恒星坐标**验证前 5 档零球；
- *  4) 用真实恒星三维坐标生成内容阶梯：太阳在 1/10/100 光年有多档变化，
- *     心宿二 / 参宿四在这段一个停靠点都没有，直接跳到有邻居的尺度；
+ *  4) 固定倍率的连续缩放：太阳 / 心宿二 / 参宿四在 1/10/100 光年都能停，
+ *     缩放不被「周围有没有邻居」影响（三维背景由 check-backdrop 验证）；
  *  5) 静态断言生产配置与 main.js 接线，禁止旧示意球 API 残留。
  */
 import assert from 'node:assert/strict';
@@ -42,9 +42,10 @@ const {
   CLOSEUP_FACTOR, REVEAL_FACTOR, FULL_FACTOR, MAX_PORTRAIT_SPAN_LY,
   starRadiusLy, starRadiusUnits, closeupDistanceLy, revealDistanceLy,
   portraitRadius, effectiveSpanLy, tierAllowsPortrait, starWithinPortrait,
-  portraitOpacity, selectStarPortrait, zoomStops, nextZoomStop,
+  portraitOpacity, selectStarPortrait,
   createStarPortrait,
 } = SP;
+const { continuousZoom, DEFAULT_ZOOM_RATIO } = await import('../src/backdrop.js');
 
 // ---- 1. 单位换算：球径必须是真实物理半径 ----
 assert.ok(Math.abs(UNITS_PER_LY - 1 / 3261.56) < 1e-12, '光年 → 场景单位换算错误');
@@ -174,7 +175,7 @@ for (let i = 0; i < SCALE_TIERS.length - 1; i++) {
   widest += `${tier.short} `;
 }
 
-// ---- 6. 内容驱动阶梯：太阳逐档有变化，心宿二跳过空白档 ----
+// ---- 6. 连续缩放：固定倍率、与内容无关，1 / 10 / 100 光年都能停 ----
 function neighborsOf(id) {
   const me = galaxy.bodies.find((b) => b.id === id);
   assert.ok(me?.galaxyPos, `缺少 ${id} 的坐标`);
@@ -184,66 +185,67 @@ function neighborsOf(id) {
     .filter((d) => Number.isFinite(d) && d > 0)
     .sort((a, b) => a - b);
 }
-function ladderOf(id) {
-  const def = galaxy.bodies.find((b) => b.id === id);
-  const close = closeupDistanceLy(def.radiusSun);
-  const fade = revealDistanceLy(def.radiusSun) * 1.2;
-  const stops = zoomStops(close, neighborsOf(id), { waypoints: [fade] });
-  assert.ok(Math.abs(stops[0] - close) < close * 1e-9, `${id} 的第一个停靠点必须是真实特写`);
-  assert.ok(Math.abs(stops[1] - fade) < fade * 1e-9, `${id} 的第二个停靠点应是「球淡成一个点」`);
-  for (let i = 1; i < stops.length; i++) {
-    assert.ok(stops[i] > stops[i - 1], `${id} 的停靠点必须严格升序`);
+assert.equal(neighborsOf('antares').filter((d) => d < 100).length, 0,
+  '心宿二 100 光年内确实没有邻居 —— 背景靠三维视锥里更远的天体，不靠邻居');
+assert.ok(neighborsOf('sun').some((d) => d > 1 && d < 10), '太阳附近有近邻');
+
+function zoomWalk(radiusSun) {
+  const minLy = closeupDistanceLy(radiusSun) * 0.45;
+  const seq = [];
+  let d = minLy;
+  for (let i = 0; i < 60; i++) {
+    const next = continuousZoom(d, 100, { minLy, maxLy: 1e5 });
+    assert.ok(next >= d, '往外缩必须单调');
+    if (next > d) assert.ok(
+      next >= 1e5 * 0.999 || Math.abs(next / d - DEFAULT_ZOOM_RATIO) < 1e-9,
+      '每格都是同一个固定倍率，不许按邻居距离跳档（最外一格允许钳到全景）');
+    d = next;
+    seq.push(d);
   }
-  return {
-    def, close, stops,
-    band: stops.filter((s) => s >= 1 && s <= 100),
-    firstNeighbor: stops.find((s) => s > 100),
-  };
+  assert.ok(seq.at(-1) >= 1e5 * 0.99, '应能连续缩回 10 万光年全景');
+  return seq;
 }
-const sunLadder = ladderOf('sun');
-const antaresLadder = ladderOf('antares');
-const betelLadder = ladderOf('betelgeuse');
-const proxLadder = ladderOf('proxima');
-assert.ok(sunLadder.band.length >= 3,
-  `太阳在 1/10/100 光年应有多个有内容的尺度，实际 ${sunLadder.band.length}`);
-assert.equal(antaresLadder.band.length, 0,
-  '心宿二在 1/10/100 光年没有任何邻居，这三个空档必须被跳过');
-assert.equal(betelLadder.band.length, 0,
-  '参宿四在 1/10/100 光年同样必须跳过');
-assert.ok(antaresLadder.firstNeighbor > 100 && antaresLadder.firstNeighbor < 5000,
-  '心宿二缩小时应直接回到几百~几千光年，看到其它天体');
-assert.ok(betelLadder.firstNeighbor > 100 && betelLadder.firstNeighbor < 5000);
-assert.ok(proxLadder.stops.find((s) => s >= 0.1 && s < 1),
-  '比邻星与南门二只隔 0.21 光年，应有一个 <1 光年的停靠点');
-// 跳档方向：特写 → 球淡成点 → 第一个有邻居的尺度；往内逐级返回
-assert.equal(nextZoomStop(antaresLadder.stops, antaresLadder.close, 1), antaresLadder.stops[1]);
-assert.equal(nextZoomStop(antaresLadder.stops, antaresLadder.stops[1], 1),
-  antaresLadder.firstNeighbor, '心宿二往外第二格必须直接跳到有邻居的尺度');
-assert.equal(nextZoomStop(antaresLadder.stops, antaresLadder.stops[1], -1), antaresLadder.close);
-assert.equal(nextZoomStop(antaresLadder.stops, antaresLadder.stops.at(-1), 1), null);
-assert.equal(nextZoomStop(sunLadder.stops, sunLadder.stops[1], 1), sunLadder.stops[2]);
-for (const s of antaresLadder.stops) {
-  assert.ok(!(s >= 1 && s <= 100), '心宿二不该停在空白档');
+let sunBands = 0;
+for (const id of ['sun', 'antares', 'betelgeuse', 'proxima']) {
+  const def = galaxy.bodies.find((b) => b.id === id);
+  const seq = zoomWalk(def.radiusSun);
+  for (const target of [1, 10, 100]) {
+    assert.ok(seq.some((v) => v >= target && v <= target * DEFAULT_ZOOM_RATIO),
+      `${id} 在 ${target} 光年这一档必须能停留，不许被跳过`);
+    if (id === 'sun') sunBands++;
+  }
+  // 球显隐只由 d/R 决定，与「这一档有没有邻居」无关
+  const r = starRadiusLy(def.radiusSun);
+  assert.equal(selectStarPortrait(
+    [{ id, dLy: closeupDistanceLy(def.radiusSun), radiusLy: r, visible: true }], 1e-6), id);
+  assert.equal(selectStarPortrait(
+    [{ id, dLy: revealDistanceLy(def.radiusSun) * 1.01, radiusLy: r, visible: true }], 1e-6),
+  null, '缩过 60R 后球必须淡成一个点');
 }
+assert.equal(sunBands, 3);
+assert.equal(continuousZoom(7.3, 100, { minLy: 1e-9, maxLy: 1e5, neighbors: [4.24, 550] }),
+  continuousZoom(7.3, 100, { minLy: 1e-9, maxLy: 1e5 }), '缩放不得被天体内容影响');
 
 // ---- 7. main.js 接线 ----
 for (const needle of [
-  "from './star-portrait.js'", 'createStarPortrait(def)', 'updateStarPortraits(dtSec)',
-  'setStarCloseup(def, obj)', 'beginFocusLadder(def, obj)', 'zoomStops(',
-  'nextZoomStop(focusStops', 'flyFocusTo(stop)', 'applyFocusAnchorScale(',
-  'waypoints: [revealDistanceLy(def.radiusSun) * 1.2]',
+  "from './star-portrait.js'", "from './backdrop.js'",
+  'createStarPortrait(def)', 'updateStarPortraits(dtSec)',
+  'setStarCloseup(def, obj)', 'buildBackdrops(def, obj)',
+  'continuousZoom(dLy, e.deltaY', 'updateBackdropVisibility()',
+  'applyFocusAnchorScale()', 'pointWorldSize(D, camera.fov, H, 1)',
   'effectiveSpanLy(dCamLy, camera.fov)', 'starRadiusUnits(def.radiusSun)',
-  'closeupDistanceLy(def.radiusSun)', 'updateTierVisibility(currentTier, span)',
-  'spanOverride != null && focusId', 'visibleBodies:', 'focusStops: focusStops',
+  'closeupDistanceLy(def.radiusSun)', 'visibleBodies:', 'closeup: closeup',
+  'distantVisible:', 'backdropDir:', 'zoomMode:',
 ]) {
-  assert.ok(main.includes(needle), `main.js 缺少真实尺度接线: ${needle}`);
+  assert.ok(main.includes(needle), `main.js 缺少真实尺度 / 三维背景接线: ${needle}`);
 }
 for (const banned of [
   'PORTRAIT_CLOSEUP_LY', 'PORTRAIT_MAX_RADIUS_LY', 'tierFactorOf', 'starSizeFactor',
   'tierCamDist(currentTier) * 0.45', 'portraitOpacity(c.dLy)',
   'selectStarPortrait(_portraitCandidates, TIERS[currentTier].spanLy)',
+  'zoomStops(', 'nextZoomStop(', 'focusStops', 'distanceTo(origin)',
 ]) {
-  assert.ok(!main.includes(banned), `main.js 仍残留旧的示意尺度判定: ${banned}`);
+  assert.ok(!main.includes(banned), `main.js 仍残留旧的示意尺度 / 自动跳档判定: ${banned}`);
 }
 const updateAt = main.indexOf('controls.update();');
 const portraitAt = main.indexOf('updateStarPortraits(dtSec);', updateAt + 1);
@@ -256,5 +258,5 @@ assert.ok(portraitSrc.includes("export * from './zoom-ladder.js'"),
 console.log(`恒星真实尺度校验通过：${stars.length} 颗恒星球 / ${showpieces.length} 个非恒星展示物；`
   + `R☉=${SUN_RADIUS_LY.toExponential(3)} ly，特写 ${CLOSEUP_FACTOR}R；`
   + `「${widest.trim()}」各档（含缩到 minDistance）零球；`
-  + `太阳 1~100 ly 有 ${sunLadder.band.length} 档内容，心宿二/参宿四 0 档`
-  + `（首个有邻居的尺度 ${antaresLadder.firstNeighbor.toFixed(0)} / ${betelLadder.firstNeighbor.toFixed(0)} ly）。`);
+  + `连续缩放每格 ×${DEFAULT_ZOOM_RATIO}，太阳 / 心宿二 / 参宿四 / 比邻星`
+  + ` 1~100 ly 均可停留（背景内容由 check:backdrop 验证）。`);

@@ -349,6 +349,20 @@ p {
     border-color: #7fe3e0;
     font-weight: 600;
 }
+/* 背景方位：只在恒星特写里出现，和档位按钮区分开（虚线描边 = 换视角而非换尺度） */
+.sb-backdrop {
+    margin: 0 0 5px;
+    padding: 4px 12px;
+    font-size: 10px;
+    color: #9fd8ff;
+    background: rgba(96, 165, 240, 0.08);
+    border: 1px dashed rgba(159, 216, 255, 0.42);
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.sb-backdrop:hover { background: rgba(96, 165, 240, 0.2); border-color: #9fd8ff; }
 .sb-hint { font-size: 10px; color: #6f82a5; letter-spacing: 0.2px; }
 @media (max-width: 620px) {
     .scale-bar { min-width: 0; width: calc(100vw - 32px); }
@@ -429,6 +443,13 @@ p {
     border-color: rgba(127, 227, 224, 0.55);
     background: rgba(9, 26, 36, 0.82);
     text-shadow: 0 1px 2px #000, 0 0 8px #7fe3e0;
+}
+/* 三维背景锚点（默认太阳）：离焦点几百光年，却和特写同框，单独标出来 */
+.bl-item.backdrop-anchor {
+    color: #9fd8ff;
+    border-color: rgba(159, 216, 255, 0.6);
+    background: rgba(10, 22, 40, 0.78);
+    text-shadow: 0 1px 2px #000, 0 0 9px rgba(120, 190, 255, 0.8);
 }
 /* 宇宙层级页的两行名字标签：第一行名字，第二行「类型 · 真实直径」。
    在这些尺度上成员本来只是 1~4px 的点，身份靠文字点出，不靠假想的外形。 */
