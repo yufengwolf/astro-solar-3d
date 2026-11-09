@@ -17,6 +17,7 @@ import {
 } from './universe.js';
 import { mountUniverseNav } from './nav.js';
 import { resolveBody, bodyHref, carryParams, currentPageFile } from './deeplinks.js';
+import { orbitAngle, coRotate } from './follow.js';
 import {
   t, distText, tierLabel, tierShort, systemName, groupName,
   viewName, infoKey, infoValue, bodyName, shortName,
@@ -491,7 +492,7 @@ export function start(system) {
   const currentNodeId = resolveCurrentId();
 
   // ---------- 天体级直达外链：?body=<ID> / #<ID> ----------
-  // 打开链接即聚焦该天体、显示信息卡、冻结公转，不需要再点菜单。
+  // 打开链接即聚焦该天体、显示信息卡，并让镜头跟着它继续公转，不需要再点菜单。
   // ID 可以是全局短名（earth）、跨页消歧名（jupiter:jupiter）或中文名（地球）。
   const deepParams = new URLSearchParams(location.search);
   const rawBody = deepParams.get('body') || deepParams.get('focus') || location.hash.slice(1);
@@ -748,11 +749,30 @@ export function start(system) {
   const settings = {
     timeScale: system.timeScale ?? 1, // 天 / 秒
     sunIntensity: system.sun?.intensity ?? 1.9,
+    followMotion: true, // 选中天体后：时间继续走，镜头跟着目标一起公转
   };
+
+  // ---------- 跟随镜头状态 ----------
+  // follow 保存「相机相对选中天体的偏移」，而不是绝对相机坐标：天体每帧沿轨道
+  // 移动，把偏移加到它当前的世界坐标上就是新相机位置，飞行途中也不会飞到空点。
+  let follow = null;
+  const followBadge = document.createElement('div');
+  followBadge.id = 'followBadge';
+  followBadge.style.display = 'none';
+  document.body.appendChild(followBadge);
+
   const gui = new dat.GUI({ autoPlace: false });
   const guiContainer = document.getElementById('gui-container');
   if (guiContainer) guiContainer.appendChild(gui.domElement);
   gui.add(settings, 'timeScale', 0, 200).name(t('timeScale'));
+  gui.add(settings, 'followMotion').name(t('followMotion')).onChange(() => {
+    refreshPause();
+    if (follow && selected) {
+      updateFollowBadge(selected);
+      const box = document.getElementById('planetInfo');
+      if (box && box.style.display !== 'none') showInfo(selected);
+    }
+  });
   // dat.GUI 自带 "Close Controls / Open Controls"：清空 DOM 原文，
   // 视觉文案全部交给 CSS 伪元素（按 html[lang] 切换）。它在展开/收起时会
   // 重写文本，所以用 observer 持续清空，避免英文混进中文界面或读屏内容。
@@ -956,8 +976,14 @@ export function start(system) {
       if (focusNode?.group) focusNode.group.getWorldPosition(tierFocus);
       else tierFocus.set(...(system.sunPos ?? [0, 0, 0]));
     }
-    // 小档冻结银盘自转，否则几十光年视野里天体会持续漂走（沿用「聚焦即冻结」约定）
-    paused = i > 0;
+    // 跟随中切档（滚轮跨 10×）：焦点必须是目标天体「此刻」的位置，
+    // 不能用静态观察原点，否则镜头会被甩回太阳附近。
+    if (follow) {
+      scene.updateMatrixWorld(true);
+      follow.object.getWorldPosition(tierFocus);
+    }
+    // 未跟随时保留小档冻结；跟随中时间照常推进，镜头会一直咬住目标。
+    refreshPause();
 
     const dir = camera.position.clone().sub(controls.target);
     if (dir.lengthSq() === 0) dir.set(0, 0.62, 1);
@@ -1042,7 +1068,8 @@ export function start(system) {
       // 不再用旧的「贴到 2 kpc 外看示意物」特写，背景与周围天体始终都在。
       const wp = new THREE.Vector3();
       obj.getWorldPosition(wp);
-      paused = true;
+      // 档位页不飞特写：保持当前取景距离，但焦点跟着天体走
+      beginFollow(def, obj, null, 'keep');
       applyTier(def.tier ?? currentTier, { instant: true, focus: wp });
     } else {
       focusOn(def, obj);
@@ -1135,14 +1162,123 @@ export function start(system) {
   let isMoving = false;
   let isZoomingOut = false;
   let paused = false;
-  const targetCameraPosition = new THREE.Vector3();
   const homeVec = new THREE.Vector3(...homePosition);
+
+  // ---------- 跟随镜头：时间不停，镜头跟着选中的天体走 ----------
+  /** 统一决定时间是否冻结：跟随时默认继续推进，关掉开关才退回冻结观察。 */
+  function refreshPause() {
+    paused = follow ? !settings.followMotion : (TIERS ? currentTier > 0 : false);
+  }
+
+  function updateFollowBadge(def) {
+    followBadge.textContent = t('following', bodyName(def), settings.followMotion);
+    followBadge.classList.toggle('paused', !settings.followMotion);
+    followBadge.style.display = '';
+  }
+
+  /** 取景距离：小卫星按半径、彗星按尾长；菜单聚焦与外链即时聚焦共用一套公式。 */
+  function followDistance(def) {
+    const tailUnits = def.comet ? (def.comet.ionTailUnits ?? 100) : 0;
+    return def.cameraOffset ?? Math.max(def.size * 8, tailUnits * 0.35, 2);
+  }
+
+  /**
+   * 建立跟随。want 是期望的「相机 - 天体」偏移（世界坐标）；
+   * mode = fly（飞近）/ instant（外链即时到位）/ keep（档位页保留当前取景距离）。
+   */
+  function beginFollow(def, object, want, mode = 'fly') {
+    const wp = new THREE.Vector3();
+    object.getWorldPosition(wp);
+    const current = camera.position.clone().sub(wp);
+    const target = (mode === 'keep' || !want) ? current.clone() : want.clone();
+    follow = {
+      id: def.id,
+      object,
+      want: target,
+      offset: mode === 'fly' ? current.clone() : target.clone(),
+      lastPos: wp.clone(),
+      lastAngle: orbitAngle(wp),
+    };
+    isMoving = mode === 'fly';
+    isZoomingOut = false;
+    flying = false;
+    refreshPause();
+    updateFollowBadge(def);
+    return wp;
+  }
+
+  function stopFollow() {
+    follow = null;
+    isMoving = false;
+    followBadge.style.display = 'none';
+    refreshPause();
+  }
+
+  const _followPos = new THREE.Vector3();
+  function updateFollow(dtSec) {
+    if (!follow) return;
+    follow.object.getWorldPosition(_followPos);
+
+    // 方位角：目标几乎在原点（太阳 / 中心天体）时保持上一帧角度，
+    // 免得 atan2 在原点附近的数值噪声把镜头甩飞。
+    const planar = Math.hypot(_followPos.x, _followPos.z);
+    const angle = planar > 1e-6 ? orbitAngle(_followPos) : follow.lastAngle;
+
+    // 1) 先跟「上一帧写进去的偏移」比对，判断用户是否拖拽 / 缩放过镜头。
+    //    必须在共转之前比：共转本身就会改变偏移，拿它比对会误判成用户操作。
+    const before = follow.offset.clone();
+    const actual = camera.position.clone().sub(follow.lastPos);
+    const eps = Math.max(0.01, before.length() * 0.002);
+    const userMoved = actual.distanceTo(before) > eps;
+    if (userMoved) before.copy(actual);
+
+    // 2) 共转：天体绕中心转过多少，相机偏移也转过多少。于是中心光源始终留在
+    //    相机背后同一侧（不会公转半圈后看到黑面），星空与其它天体相对流动。
+    const rOff = coRotate(before, follow.lastAngle, angle);
+    const rWant = coRotate(follow.want, follow.lastAngle, angle);
+    follow.offset.set(rOff.x, rOff.y, rOff.z);
+    follow.want.set(rWant.x, rWant.y, rWant.z);
+    follow.lastAngle = angle;
+
+    if (userMoved) {
+      // 尊重用户手动调整过的取景方向。飞行中只改方向、距离仍继续收敛，
+      // 否则 OrbitControls 的阻尼残留会被误判成「用户接管」而让飞行半途停下。
+      if (isMoving) {
+        const reach = Math.max(follow.want.length(), 1e-6);
+        const len = follow.offset.length();
+        if (len > 1e-9) follow.want.copy(follow.offset).multiplyScalar(reach / len);
+      } else {
+        follow.want.copy(follow.offset);
+      }
+    }
+
+    // 3) 飞行只在「相对偏移」上插值：目标天体怎么跑都不会脱靶。
+    //    指数收敛与帧率无关——固定 lerp(0.06) 在低帧率 / 软件渲染下要飞十几秒。
+    if (isMoving) {
+      const k = 1 - Math.exp(-Math.max(dtSec, 1e-3) * 3.5);
+      follow.offset.lerp(follow.want, k);
+      const reach = Math.max(follow.want.length(), 1e-6);
+      if (follow.offset.distanceTo(follow.want) < reach * 0.01) {
+        follow.offset.copy(follow.want);
+        isMoving = false;
+        if (selected) showInfo(selected);
+      }
+    }
+
+    // 4) 落到本帧天体位置：target 与 camera 同步平移，OrbitControls 的
+    //    spherical 由两者之差重算，镜头朝向只随共转变化。
+    controls.target.copy(_followPos);
+    camera.position.copy(_followPos).add(follow.offset);
+    follow.lastPos.copy(_followPos);
+    if (TIERS) tierFocus.copy(_followPos); // 滚轮切档时焦点不退回静态原点
+  }
 
   // 视角切换：飞向新位姿，同时更新"返回基准点"，保证关闭信息卡后回到当前视角
   const flyPos = new THREE.Vector3();
   const flyTarget = new THREE.Vector3();
   let flying = false;
   function applyView(idx) {
+    stopFollow();
     const pose = cameraPose(system, camera, views[idx].frameTo);
     controls.minDistance = Math.max(0.05, system.bodies[0].size * 0.3);
     controls.maxDistance = pose.maxDistance;
@@ -1178,6 +1314,7 @@ export function start(system) {
     if (settings.bodyExaggeration > 1) {
       detail += (detail ? '\n' : '') + t('infoZoom', settings.bodyExaggeration);
     }
+    if (follow) detail += (detail ? '\n' : '') + t('followingNote', settings.followMotion);
     detailEl.innerText = detail;
     // 有卫星系统的天体：信息卡里给出"进入卫星系统"按钮，点行星即可下钻
     const oldBtn = box.querySelector('.child-btn');
@@ -1196,10 +1333,10 @@ export function start(system) {
     const box = document.getElementById('planetInfo');
     if (box) box.style.display = 'none';
     setActiveShowcase(null);
+    stopFollow();
     // 银河系页保留当前比例尺档位，别把用户刚刚切到的尺度弹回全景；
     // 小档继续保持冻结，防止银盘自转把近邻恒星甩出画面。
-    if (TIERS) { paused = currentTier > 0; return; }
-    paused = false;
+    if (TIERS) return;
     isZoomingOut = true;
     controls.target.set(...homeTarget);
   }
@@ -1208,24 +1345,18 @@ export function start(system) {
   function focusOn(def, object) {
     const box = document.getElementById('planetInfo');
     if (box) box.style.display = 'none';
-    // 进入聚焦立即冻结时间：天体（公转+自转）原地停住，相机飞向它"此刻"的位置，
-    // 落地即严丝合缝居中。否则飞行途中天体仍在运动，等相机抵达时它已漂移出旧的落点，
-    // 菜单聚焦（通常要飞很远）尤其明显——看起来就是"聚焦到一个空点，天体已不在那"。
-    paused = true;
-
     const worldPos = new THREE.Vector3();
     object.getWorldPosition(worldPos);
     controls.target.copy(worldPos);
     camera.lookAt(worldPos);
 
-    // 小卫星按自身半径取景，否则飞过去了还是看不见；
-    // 彗星则要按"尾长"取景——按核半径飞过去会一头扎进彗发里（加法混合的雾会糊满屏幕）
-    const tailUnits = def.comet ? (def.comet.ionTailUnits ?? 100) : 0;
-    const offset = def.cameraOffset ?? Math.max(def.size * 8, tailUnits * 0.35, 2);
-    targetCameraPosition
-      .copy(worldPos)
-      .add(camera.position.clone().sub(worldPos).normalize().multiplyScalar(offset));
-    isMoving = true;
+    // 不再冻结全场：时间继续推进，相机改为追踪「天体 + 相对偏移」。
+    // 落点从绝对坐标换成相对偏移后，飞行途中天体一直在跑也不会飞到空点，
+    // 落地后镜头继续跟着它绕中心运动，其它天体和背景都保持动态。
+    const dir = camera.position.clone().sub(worldPos);
+    if (dir.lengthSq() < 1e-12) dir.set(0, 0.42, 1);
+    dir.normalize().multiplyScalar(followDistance(def));
+    beginFollow(def, object, dir, 'fly');
   }
 
   window.addEventListener('mousemove', (e) => {
@@ -1290,9 +1421,9 @@ export function start(system) {
       if (n.comet) updateComet(n, sunPos, settings.tailGain ?? 1);
     }
 
-    // 银河系整体缓慢自转：只在全景档（currentTier===0）允许，小档一律冻结。
-    // 小档视野只有几光年，任何自转都会让天体迅速漂出焦点。
-    if (galaxyGroup && !paused && (!TIERS || currentTier === 0)) {
+    // 银河系整体缓慢自转：全景档常驻；跟随中连小档也放开——镜头每帧咬住目标
+    // 并随它共转，刚体自转不会把近邻恒星甩出画面，反而是更自然的动态背景。
+    if (galaxyGroup && !paused && (!TIERS || currentTier === 0 || follow)) {
       galaxyGroup.rotation.y += dtSec * (system.galaxy?.rotateSpeed ?? 0.006);
     }
 
@@ -1307,12 +1438,16 @@ export function start(system) {
       a.position.z = z * c - x * s;
     }
 
+    // 跟随镜头：天体位置已按本帧时间更新，先把相机与 controls.target 同步过去，
+    // 再做拾取 / 标签投影，避免慢一帧。飞行中的收敛也在 updateFollow 内完成。
+    if (follow) updateFollow(dtSec);
+
     // 悬停描边
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObjects(raycastTargets, false);
     outlinePass.selectedObjects = hits.length ? [hits[0].object] : [];
 
-    // 相机飞行：视角切换 > 点击聚焦 > 返回基准点
+    // 相机飞行：视角切换 / 关闭信息卡后返回基准点（跟随与聚焦飞行已在上面处理）
     if (flying) {
       camera.position.lerp(flyPos, 0.05);
       controls.target.lerp(flyTarget, 0.05);
@@ -1322,13 +1457,6 @@ export function start(system) {
         ? Math.max(1e-7, tierCamDist(currentTier) * 0.01)
         : Math.max(0.5, flyPos.length() * 0.004);
       if (camera.position.distanceTo(flyPos) < eps) flying = false;
-    } else if (isMoving) {
-      camera.position.lerp(targetCameraPosition, 0.03);
-      if (camera.position.distanceTo(targetCameraPosition) < 1) {
-        isMoving = false;
-        paused = true; // 飞抵后暂停时间，便于观察
-        showInfo(selected);
-      }
     } else if (isZoomingOut) {
       camera.position.lerp(homeVec, 0.05);
       if (camera.position.distanceTo(homeVec) < 1) isZoomingOut = false;
@@ -1552,7 +1680,7 @@ export function start(system) {
   const scaleParam = params.get('scale');
 
   // 即时到位（不走相机飞行）：外链打开或改 hash 时要立刻看到天体，而不是等几秒飞过去。
-  // 复现「点击该天体后」的界面：相机对准、暂停公转、菜单高亮、信息卡展开。
+  // 复现「点击该天体后」的界面：相机对准、镜头随行、菜单高亮、信息卡展开。
   function focusInstant(id) {
     const def = infoById.get(id);
     const obj = focusObjectOf(id);
@@ -1562,8 +1690,7 @@ export function start(system) {
     controls.target.copy(wp);
     // 与 focusOn 同一套取景距离：旧的固定 2 单位比地球本体还小，
     // 相机贴在球内部反而什么都看不见；彗星还要按彗尾长度退开。
-    const tailUnits = def.comet ? (def.comet.ionTailUnits ?? 100) : 0;
-    const offset = def.cameraOffset ?? Math.max(def.size * 8, tailUnits * 0.35, 2);
+    const offset = followDistance(def);
     // 站在天体「朝中心天体」的一侧、略偏切向与上方：中心光源落在相机背后，
     // 看到的是被照亮的一面，而且太阳不会进入画面把它糊满。
     // 不能用「当前相机位置 - 天体」当方向，轨道相位不同结果不可控（实测会贴进太阳）。
@@ -1580,12 +1707,11 @@ export function start(system) {
         .add(new THREE.Vector3(0, 0.42, 0))
         .normalize();
     }
-    camera.position.copy(wp).add(dir.multiplyScalar(offset));
+    const want = dir.multiplyScalar(offset);
+    camera.position.copy(wp).add(want);
     camera.lookAt(wp);
     selected = def;
-    paused = true;
-    flying = false;
-    isMoving = false;
+    beginFollow(def, obj, want, 'instant');
     setActiveShowcase(id);
     highlightNav(id);
     showInfo(def);
@@ -1613,7 +1739,8 @@ export function start(system) {
     if (focusId && infoById.has(focusId) && focusWp) {
       const def = infoById.get(focusId);
       selected = def;
-      paused = true;
+      const obj = focusObjectOf(focusId);
+      if (obj) beginFollow(def, obj, null, 'keep');
       setActiveShowcase(focusId);
       highlightNav(focusId);
       showInfo(def);
@@ -1666,6 +1793,23 @@ export function start(system) {
       window.location.href = zoomOutUrl;
     }
   }, { passive: true });
+
+  // ?debug=1 暴露只读状态，供真实浏览器 / CDP 验证跟随镜头；默认不挂到 window。
+  if (new URLSearchParams(location.search).has('debug')) {
+    window.__astro = {
+      get state() {
+        return {
+          paused,
+          elapsedDays,
+          selected: selected?.id ?? null,
+          following: follow?.id ?? null,
+          followMotion: settings.followMotion,
+          camera: camera.position.toArray(),
+          target: controls.target.toArray(),
+        };
+      },
+    };
+  }
 
   animate();
 

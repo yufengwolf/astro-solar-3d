@@ -63,6 +63,12 @@ const UI = {
     unitKpc: '千秒差距',
     morphLabel: '形态',
     viewLabel: '视野',
+    // 跟随镜头：选中天体后镜头随行、时间照常推进
+    followMotion: '跟随运动',
+    following: (n, on) => on ? `跟随中 · ${n}` : `已暂停 · ${n}`,
+    followingNote: (on) => on
+      ? '镜头跟随中：随该天体一同公转，时间与背景照常运行'
+      : '时间已暂停：镜头锁定该天体，全场静止',
     // 宇宙层级导航
     navRoot: '宇宙遨游',
     navHome: '星图首页',
@@ -110,6 +116,12 @@ const UI = {
     unitKpc: 'kpc',
     morphLabel: 'Morphology',
     viewLabel: 'Field of view',
+    // Tracking camera: follow the selected body while time keeps running
+    followMotion: 'Track motion',
+    following: (n, on) => on ? `Tracking · ${n}` : `Paused · ${n}`,
+    followingNote: (on) => on
+      ? 'Camera tracking: follows this body along its orbit; time keeps running'
+      : 'Time paused: camera locked on this body, everything is still',
     // Cosmic hierarchy navigation
     navRoot: 'Cosmic Atlas',
     navHome: 'Atlas home',

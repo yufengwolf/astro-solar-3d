@@ -59,6 +59,43 @@ p {
     max-width: 60%;
 }
 
+/* 跟随镜头状态：选中天体后时间与镜头都在运动，给一个常驻的明确提示。
+   叠在「视觉放大」角标上方，避免与左下角原有角标互相遮挡。 */
+#followBadge {
+    position: fixed;
+    left: 1%;
+    bottom: 56px;
+    z-index: 13;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(6, 10, 22, 0.82);
+    border: 1px solid rgba(120, 190, 255, 0.38);
+    color: #dbeaff;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 12px;
+    letter-spacing: .04em;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+}
+#followBadge::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #5fd0a0;
+    box-shadow: 0 0 8px #5fd0a0;
+    animation: followPulse 1.8s ease-in-out infinite;
+}
+#followBadge.paused::before {
+    background: #9aa8bb;
+    box-shadow: none;
+    animation: none;
+}
+@keyframes followPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
 /* ===== 导航主页（index.html） ===== */
 .home-wrap {
     min-height: 100vh;
@@ -686,7 +723,8 @@ body.embed #bodyNav,
 body.embed .lang-toggle,
 body.embed #gui-container,
 body.embed .scale-bar,
-body.embed #exaggerationBadge { display: none !important; }
+body.embed #exaggerationBadge,
+body.embed #followBadge { display: none !important; }
 body.embed .planet-info { width: min(280px, 62vw); right: 6px; bottom: 6px; }
 body.embed .planet-info-content { padding: 14px 16px; font-size: 12px; }
 body.embed #bodyLabels { z-index: 9; }

@@ -34,6 +34,7 @@
     "check:comet": "node scripts/check-comet.mjs",
     "check:universe": "node scripts/check-universe.mjs",
     "check:deeplinks": "node scripts/check-deeplinks.mjs",
+    "check:follow": "node scripts/check-follow.mjs",
     "sync": "node scripts/sync.mjs"
   },
   "devDependencies": {

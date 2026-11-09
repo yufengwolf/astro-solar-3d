@@ -316,7 +316,7 @@ export default {
     spurWidth: 0.035,
     spurRadial: 0.2,
     pointSize: 0.2,
-    rotateSpeed: 0.006,    // 银盘整体慢转(弧度/秒)，聚焦时冻结
+    rotateSpeed: 0.006,    // 银盘整体慢转(弧度/秒)；跟随镜头下小档也保留慢转
     interArmStars: 100,    // 臂间几乎掏空，只留极暗背景
     bulgeStars: 900,
     haloStars: 550,
