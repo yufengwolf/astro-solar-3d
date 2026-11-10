@@ -29,6 +29,14 @@ function button(text, title) {
   if (title) b.title = title;
   return b;
 }
+/** 图标 + 文字按钮：移动端用 CSS 隐藏文字，只留 ↑/↓/☰ 图标，避免窄屏挤成一团 */
+function iconButton(icon, labelText, title) {
+  const b = el('button', 'un-btn');
+  b.type = 'button';
+  b.append(el('span', 'un-btn-ico', icon), el('span', 'un-btn-label', labelText));
+  if (title) b.title = title;
+  return b;
+}
 
 /** 下一级有多个候选时的小下拉 */
 function childDropdown(children, anchor, onPick) {
@@ -157,12 +165,12 @@ export function mountUniverseNav(opts = {}) {
   const kids = currentId ? childrenOf(currentId) : [byId(ROOT_ID)].filter(Boolean);
   const focusChild = currentId ? focusChildOf(currentId) : byId(ROOT_ID);
 
-  const upBtn = button(`↑ ${t('navUp')}`, up ? label(up) : t('navAtRoot'));
+  const upBtn = iconButton('↑', t('navUp'), up ? label(up) : t('navAtRoot'));
   if (up) upBtn.onclick = () => { location.href = href(up); };
   else { upBtn.disabled = true; upBtn.classList.add('disabled'); }
   actions.appendChild(upBtn);
 
-  const downBtn = button(`↓ ${t('navDown')}`, focusChild ? label(focusChild) : t('navNoChild'));
+  const downBtn = iconButton('↓', t('navDown'), focusChild ? label(focusChild) : t('navNoChild'));
   let dd = null;
   if (kids.length > 1) {
     dd = childDropdown(kids, downBtn, (c) => { location.href = href(c); });
@@ -178,7 +186,7 @@ export function mountUniverseNav(opts = {}) {
     actions.appendChild(downBtn);
   }
 
-  const mapBtn = button(`☰ ${t('navMap')}`, t('navMapTitle'));
+  const mapBtn = iconButton('☰', t('navMap'), t('navMapTitle'));
   const overlay = buildMap(currentId);
   mapBtn.onclick = () => overlay.classList.add('open');
   actions.appendChild(mapBtn);
