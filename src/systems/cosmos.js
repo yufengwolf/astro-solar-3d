@@ -226,6 +226,9 @@ export function makeCosmosSystem(nodeId) {
       glow: false,             // 银盘柔光不适用于宇宙网 / 星系肖像
       diskRadiusKpc: 15,
       radius: portrait ? 22 : 15,
+      // 可观测宇宙专属：以观察者为中心、半径约 465 亿光年的「视界球」——
+      // 用一层星点球壳表示边界，球内体积填充稀薄场星系；星系团/超星系团在球内按真实大尺度结构分布。
+      shell: node.kind === 'universe',
       // 背景点云只用锚点做「纤维汇聚 / 暗弱伴星系」的分布依据，
       // 不再把成员画成团块；颜色与密度按成员自身数据差异化。
       anchors: bodies.map((b) => ({ pos: b.galaxyPos, color: b.color, weight: b.weight })),

@@ -57,8 +57,8 @@ export const NODES = [
     url: 'cosmos.html?node=universe', spanLy: 9.3e10, dLy: 0, pos: [0, 0, 0],
     focus: 'laniakea', color: 0xa9c4ff, accent: '#8fa8ff', seed: 93001,
     scaleZh: '直径约 930 亿光年', scaleEn: '~93 billion light-years across',
-    briefZh: '我们以光能到达的全部范围。物质不是均匀铺开的，而是聚成纤维、片状结构和巨大空洞，这张网叫「宇宙大尺度结构」。',
-    briefEn: 'Everything we can in principle observe. Matter is not uniform: it gathers into filaments, sheets and vast voids — the cosmic web.',
+    briefZh: '一个以我们（地球）为中心、半径约 465 亿光年的球体——所有我们能看到的光都来自这个球内，边界之外光还没来得及到达我们。球内的物质并不均匀，而是聚成纤维、片状结构和巨大空洞，这张网叫「宇宙大尺度结构」，星系团与超星系团在其中按真实位置分布。',
+    briefEn: 'A sphere centred on us, with a radius of about 46.5 billion light-years — everything we can see lies inside it; beyond the boundary, light has not yet had time to reach us. Within the sphere, matter gathers into filaments, sheets and vast voids — the cosmic web — with galaxy clusters and superclusters placed at their true positions.',
   }),
 
   // ---- 宇宙层：拉尼亚凯亚之外的其它超星系团（同级，未来可继续补） ----

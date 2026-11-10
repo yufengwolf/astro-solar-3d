@@ -81,6 +81,13 @@ function normAnchor(a) {
  * @param {Array}  cfg.anchors     可点击成员：坐标数组或 { pos, color, weight }
  * @param {number} cfg.pointSize   全景档点大小（场景单位）
  * @param {number} cfg.radius      背景点云的整体半径
+ * @param {boolean} [cfg.shell]    可观测宇宙专属：再以一层稀疏星点球壳表示「视界球」边界，
+ *                                  并在球内体积填充稀薄场星系（center-on-observer 的 465 亿光年球）
+ * @param {number} [cfg.shellRadius]    球壳半径（默认 = cfg.radius）
+ * @param {number[]} [cfg.shellColor]   球壳星点颜色（线性 RGB，默认偏冷星光白）
+ * @param {number} [cfg.shellDensity]   球壳星点数（默认 6500）
+ * @param {number} [cfg.shellThickness] 球壳厚度（默认 = shellRadius×0.035）
+ * @param {number} [cfg.volumeDensity]  球内场星系数（默认 1500）
  */
 export function buildCosmosField(cfg) {
   const kind = cfg.kind ?? 'group';
@@ -194,14 +201,38 @@ export function buildCosmosField(cfg) {
   }
 
   // 极稀疏的场星系，给空洞一点深度：亮度低到只有在黑底上才隐约可见
-  const fieldN = shape === 'void' ? 150 : (shape === 'cluster' ? 380 : 460);
-  for (let i = 0; i < fieldN; i++) {
-    const r = Math.pow(rng(), 0.6) * radius * 1.15;
-    const ang = rng() * Math.PI * 2;
-    push(
-      Math.cos(ang) * r, randn(rng) * radius * 0.12, Math.sin(ang) * r,
-      hazeCol, 0.05 + rng() * 0.14,
-    );
+  if (cfg.shell) {
+    // 可观测宇宙：以我们（地球）为中心、半径约 465 亿光年的「视界球」。
+    // 它不是一颗实心天体，而是一层「所有能到达我们的光」的边界 —— 用一圈
+    // 稀疏星点组成的球壳来表达这层边界；球壳之内再用体积均匀撒布的极暗
+    // 场星系填满，营造「可观测宇宙是巨大的空间、而非一个亮点」的观感，
+    // 而星系团 / 超星系团在球内按真实大尺度结构分布（见上面的 web 分支）。
+    const SR = cfg.shellRadius ?? radius;
+    const shellCol = cfg.shellColor ?? [0.64, 0.76, 1.0];
+    const shellN = cfg.shellDensity ?? 6500;
+    const shellThick = cfg.shellThickness ?? SR * 0.035;
+    for (let i = 0; i < shellN; i++) {
+      const u = rng() * 2 - 1, phi = rng() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+      const r = SR + randn(rng) * shellThick;
+      push(r * s * Math.cos(phi), r * u, r * s * Math.sin(phi), shellCol, 0.09 + rng() * 0.20);
+    }
+    // 球内稀薄场星系：体积均匀填充（r ∝ ³√rand，保证球心不挤、外缘不空）
+    const volN = cfg.volumeDensity ?? 1500;
+    for (let i = 0; i < volN; i++) {
+      const u = rng() * 2 - 1, phi = rng() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+      const r = Math.cbrt(rng()) * SR * 0.92;
+      push(r * s * Math.cos(phi), r * u, r * s * Math.sin(phi), hazeCol, 0.04 + rng() * 0.10);
+    }
+  } else {
+    const fieldN = shape === 'void' ? 150 : (shape === 'cluster' ? 380 : 460);
+    for (let i = 0; i < fieldN; i++) {
+      const r = Math.pow(rng(), 0.6) * radius * 1.15;
+      const ang = rng() * Math.PI * 2;
+      push(
+        Math.cos(ang) * r, randn(rng) * radius * 0.12, Math.sin(ang) * r,
+        hazeCol, 0.05 + rng() * 0.14,
+      );
+    }
   }
 
   const geo = new THREE.BufferGeometry();

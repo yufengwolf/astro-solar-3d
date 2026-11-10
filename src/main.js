@@ -2334,6 +2334,7 @@ export function start(system) {
             return out.sort((a, b) => a.dLy - b.dLy);
           })(),
           cameraNear: camera.near,
+          fieldPoints: galaxyField?.geometry?.attributes?.position?.count ?? 0,
           visibleBodies: [...byId.entries()]
             .filter(([, n]) => n.group.visible).map(([id]) => id),
           visiblePortraits: [...starPortraits.values()].filter((p) => p.group.visible).length,
