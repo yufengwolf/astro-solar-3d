@@ -1090,15 +1090,22 @@ export function start(system) {
     // 背景层永不隐藏：小档把银盘点云切成固定 1.6px 的屏幕空间星点，
     // 既不随相机贴近膨胀成 bokeh 球，又能一直看到银河系的星光。
     if (galaxyField) {
-      const m = galaxyField.material;
-      // 只有全景档用透视点大小；从第 1 档起相机距离已经缩到 1/10，
-      // 继续 sizeAttenuation 会让每个恒星点膨胀 10 倍，正是上一轮的 bokeh 圆斑。
+      // 背景点云可能是单 Points（银盘/普通宇宙网）或一个 Group
+      // （可观测宇宙：主点云 + 独立的星点视界球壳 + 半透明边界球）。
+      // 遍历其中所有 Points，跳过标记为 shell 的视界球壳——它用固定屏幕尺寸，
+      // 不能切回透视，否则离相机远的壳点会缩成看不见。
       const wantAtten = i === 0;
-      if (m.sizeAttenuation !== wantAtten) {
-        m.sizeAttenuation = wantAtten;
-        m.needsUpdate = true;
-      }
-      m.size = wantAtten ? (system.galaxy?.pointSize ?? 0.2) : 1.6;
+      const baseSize = system.galaxy?.pointSize ?? 0.2;
+      galaxyField.traverse((o) => {
+        if (!o.isPoints) return;
+        if (o.userData.shell) return;
+        const m = o.material;
+        if (m.sizeAttenuation !== wantAtten) {
+          m.sizeAttenuation = wantAtten;
+          m.needsUpdate = true;
+        }
+        m.size = wantAtten ? baseSize : 1.6;
+      });
     }
     // 银盘整体柔光是 15 kpc 尺度的东西，小档只会糊满屏；点云本身仍保留。
     if (galaxyGlow) galaxyGlow.visible = i === 0;
@@ -2334,7 +2341,9 @@ export function start(system) {
             return out.sort((a, b) => a.dLy - b.dLy);
           })(),
           cameraNear: camera.near,
-          fieldPoints: galaxyField?.geometry?.attributes?.position?.count ?? 0,
+          fieldPoints: (galaxyField
+            ? (() => { let n = 0; galaxyField.traverse((o) => { if (o.isPoints) n += o.geometry.attributes.position.count; }); return n; })()
+            : 0),
           visibleBodies: [...byId.entries()]
             .filter(([, n]) => n.group.visible).map(([id]) => id),
           visiblePortraits: [...starPortraits.values()].filter((p) => p.group.visible).length,

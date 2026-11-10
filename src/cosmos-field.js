@@ -152,15 +152,15 @@ export function buildCosmosField(cfg) {
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         filament(anchors[i].pos, anchors[j].pos,
-          Math.round(linkCount / ((n * (n - 1)) / 2)), 0.55, filamentCol, 0.55);
+          Math.round(linkCount / ((n * (n - 1)) / 2)), 0.55, filamentCol, 0.62);
       }
       // 向外缘伸出短纤维，避免整张图只在中间打转
       const ang = (i / n) * Math.PI * 2 + rng() * 0.6;
       const far = [Math.cos(ang) * radius, randn(rng) * 1.2, Math.sin(ang) * radius];
-      filament(anchors[i].pos, far, Math.round(linkCount / (n * 2)), 0.75, filamentCol, 0.38);
+      filament(anchors[i].pos, far, Math.round(linkCount / (n * 2)), 0.75, filamentCol, 0.46);
     }
     for (const a of anchors) {
-      clump(a.pos, 48 + Math.round(a.weight * 130), 0.45 + a.weight * 0.65, a.rgb, 0.30);
+      clump(a.pos, 48 + Math.round(a.weight * 130), 0.45 + a.weight * 0.65, a.rgb, 0.36);
     }
     clump([0, 0, 0], 260, 5.0, hazeCol, 0.14);
   } else if (shape === 'flow') {
@@ -200,30 +200,20 @@ export function buildCosmosField(cfg) {
     }
   }
 
-  // 极稀疏的场星系，给空洞一点深度：亮度低到只有在黑底上才隐约可见
+  // ===== 主点云：结构（网/流/团/空洞）+ 球内体积填充 =====
+  // 体积填充放在主点云里（随距离正常衰减），让球壳与内部网在「同一套
+  // 尺度语言」里——壳内的稀薄场星系把球心和球壳连成一片巨大的空间感。
   if (cfg.shell) {
-    // 可观测宇宙：以我们（地球）为中心、半径约 465 亿光年的「视界球」。
-    // 它不是一颗实心天体，而是一层「所有能到达我们的光」的边界 —— 用一圈
-    // 稀疏星点组成的球壳来表达这层边界；球壳之内再用体积均匀撒布的极暗
-    // 场星系填满，营造「可观测宇宙是巨大的空间、而非一个亮点」的观感，
-    // 而星系团 / 超星系团在球内按真实大尺度结构分布（见上面的 web 分支）。
-    const SR = cfg.shellRadius ?? radius;
-    const shellCol = cfg.shellColor ?? [0.64, 0.76, 1.0];
-    const shellN = cfg.shellDensity ?? 6500;
-    const shellThick = cfg.shellThickness ?? SR * 0.035;
-    for (let i = 0; i < shellN; i++) {
-      const u = rng() * 2 - 1, phi = rng() * Math.PI * 2, s = Math.sqrt(1 - u * u);
-      const r = SR + randn(rng) * shellThick;
-      push(r * s * Math.cos(phi), r * u, r * s * Math.sin(phi), shellCol, 0.09 + rng() * 0.20);
-    }
-    // 球内稀薄场星系：体积均匀填充（r ∝ ³√rand，保证球心不挤、外缘不空）
+    // 可观测宇宙：球内体积均匀填充极暗场星系，营造「巨大的空间而非一个亮点」，
+    // 星系团 / 超星系团在球内按真实大尺度结构分布（见上方的 web 分支）。
     const volN = cfg.volumeDensity ?? 1500;
     for (let i = 0; i < volN; i++) {
       const u = rng() * 2 - 1, phi = rng() * Math.PI * 2, s = Math.sqrt(1 - u * u);
-      const r = Math.cbrt(rng()) * SR * 0.92;
-      push(r * s * Math.cos(phi), r * u, r * s * Math.sin(phi), hazeCol, 0.04 + rng() * 0.10);
+      const r = Math.cbrt(rng()) * radius * 0.92;
+      push(r * s * Math.cos(phi), r * u, r * s * Math.sin(phi), hazeCol, 0.06 + rng() * 0.12);
     }
   } else {
+    // 极稀疏的场星系，给空洞一点深度：亮度低到只有在黑底上才隐约可见
     const fieldN = shape === 'void' ? 150 : (shape === 'cluster' ? 380 : 460);
     for (let i = 0; i < fieldN; i++) {
       const r = Math.pow(rng(), 0.6) * radius * 1.15;
@@ -235,11 +225,11 @@ export function buildCosmosField(cfg) {
     }
   }
 
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  return new THREE.Points(geo, new THREE.PointsMaterial({
-    size: cfg.pointSize ?? 0.16,
+  const mainGeo = new THREE.BufferGeometry();
+  mainGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  mainGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const mainField = new THREE.Points(mainGeo, new THREE.PointsMaterial({
+    size: cfg.pointSize ?? 0.18,
     map: discTexture(),
     vertexColors: true,
     transparent: true,
@@ -248,4 +238,60 @@ export function buildCosmosField(cfg) {
     sizeAttenuation: true,
     toneMapped: false,
   }));
+
+  const group = new THREE.Group();
+  group.add(mainField);
+
+  // ===== 可观测宇宙专属：星点「视界球壳」+ 半透明边界球 =====
+  // 关键：球壳星点用「固定屏幕尺寸 + 不受距离衰减」，否则远在半径 15 处的点
+  // 又暗又小，整层壳几乎看不见（上一版就是这个病根）。这样「视界球」在任意
+  // 缩放档位都是一圈清晰明亮的星光，背景再叠一层极淡的边界球强化球的形体。
+  if (cfg.shell) {
+    const SR = cfg.shellRadius ?? radius;
+    const shellCol = cfg.shellColor ?? [0.70, 0.82, 1.0];
+    const shellN = cfg.shellDensity ?? 9000;
+    const shellThick = cfg.shellThickness ?? SR * 0.045;
+    const sp = [], sc = [];
+    const pushShell = (x, y, z, c, b) => {
+      sp.push(x, y, z);
+      sc.push(Math.min(1, c[0] * b), Math.min(1, c[1] * b), Math.min(1, c[2] * b));
+    };
+    for (let i = 0; i < shellN; i++) {
+      const u = rng() * 2 - 1, phi = rng() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+      const r = SR + randn(rng) * shellThick;
+      pushShell(r * s * Math.cos(phi), r * u, r * s * Math.sin(phi), shellCol, 0.34 + rng() * 0.42);
+    }
+    const shellGeo = new THREE.BufferGeometry();
+    shellGeo.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+    shellGeo.setAttribute('color', new THREE.Float32BufferAttribute(sc, 3));
+    const shellPts = new THREE.Points(shellGeo, new THREE.PointsMaterial({
+      size: 2.6,                    // 固定屏幕尺寸：无论远近，「视界球」都清晰可见
+      map: discTexture(),
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: false,
+      toneMapped: false,
+    }));
+    shellPts.userData.shell = true;  // main.js 缩放时跳过它，保持固定尺寸
+    group.add(shellPts);
+
+    // 半透明边界球：additive + BackSide，边缘(limb)自然增亮 = 可观测宇宙视界
+    const bc = cfg.shellBubble ?? [0.50, 0.62, 1.0];
+    const bubble = new THREE.Mesh(
+      new THREE.SphereGeometry(SR, 48, 32),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(bc[0], bc[1], bc[2]),
+        transparent: true,
+        opacity: 0.055,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    group.add(bubble);
+  }
+
+  return group;
 }

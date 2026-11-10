@@ -220,7 +220,7 @@ export function makeCosmosSystem(nodeId) {
       kind: portrait ? 'void' : fieldKind,
       shape: fieldShape(node),
       seed: node.seed ?? 7,
-      pointSize: kindsWeb ? 0.18 : 0.15,
+      pointSize: kindsWeb ? 0.22 : 0.15,
       scaleKpc: 1,
       rotateSpeed: 0,          // 大尺度结构不该自转，否则小档会漂走
       glow: false,             // 银盘柔光不适用于宇宙网 / 星系肖像
