@@ -166,7 +166,8 @@ for (const dLy of [closeupDistanceLy(680), 1e-4, 1, 10, 100]) {
   assert.ok(ids.includes('sun'), `相机距离 ${dLy} ly 时太阳仍应在视锥内`);
 }
 
-// 换个背景方位 = 换一批背景天体；旋转视角（改用另一方向）也改变入画集合
+// 换一个视线方向 = 换一批背景天体；鼠标拖拽旋转视角同样改变入画集合。
+// 界面上不再有「换个背景」按钮，方位只在进入特写时后台随机选一次。
 const second = inFrameIds(options[1].dir, 1);
 const a = new Set(first), b = new Set(second);
 assert.ok([...a].some((id) => !b.has(id)) || [...b].some((id) => !a.has(id)),
@@ -184,12 +185,17 @@ const i18n = readFileSync(resolve(SRC, 'i18n.js'), 'utf8');
 for (const needle of [
   "from './backdrop.js'", 'projectToNdc', 'pointWorldSize', 'backdropOptions(',
   'continuousZoom(dLy, e.deltaY', 'DEFAULT_ZOOM_RATIO',
-  'updateBackdropVisibility()', 'applyFocusAnchorScale()', 'cycleBackdrop()',
+  'updateBackdropVisibility()', 'applyFocusAnchorScale()', 'buildBackdrops(',
   'setContinuousZoomRange()', 'controls.enableZoom = false',
-  'distantVisible:', 'backdropDir:', 'zoomMode:', 'sb-backdrop',
-  'backdropNote', 'backdropAnchor', 'backdropBtn',
+  'distantVisible:', 'backdropDir:', 'zoomMode:',
+  'backdropNote', 'backdropAnchor',
+  // 背景方位只在后台随机选一次，界面不再暴露按钮 / 轮换入口
+  'Math.random() * backdrops.length', 'closeup.backdropIndex',
 ]) {
   assert.ok(main.includes(needle), `main.js 缺少三维背景接线: ${needle}`);
+}
+for (const removed of ['sb-backdrop', 'backdropBtn', 'cycleBackdrop()']) {
+  assert.ok(!main.includes(removed), `main.js 仍暴露换背景 UI: ${removed}`);
 }
 for (const banned of [
   'zoomStops(', 'nextZoomStop(', 'focusStops', 'distanceTo(origin) / UNITS_PER_LY',
@@ -203,10 +209,10 @@ for (const needle of ['backdropNote', 'backdropAnchor', 'backdropBtn', 'focusSca
   assert.equal((i18n.match(new RegExp(needle, 'g')) ?? []).length, 2,
     `${needle} 必须中英双语各一份`);
 }
-assert.ok(readFileSync(resolve(SRC, 'style.css'), 'utf8').includes('.sb-backdrop'),
-  '缺少背景方位按钮样式');
+assert.ok(!readFileSync(resolve(SRC, 'style.css'), 'utf8').includes('.sb-backdrop'),
+  'style.css 不该再有「换个背景」按钮样式');
 
 console.log(`三维背景校验通过：心宿二 1 光年视野里 ${first.length} 个天体入画，`
   + `其中 ${distant.length} 个在 100 光年外（太阳 ${dSun.toFixed(0)} ly）；`
-  + `提供 ${options.length} 个可轮换背景方位；连续缩放每格 ×${DEFAULT_ZOOM_RATIO}，`
+  + `提供 ${options.length} 个候选方位（后台随机取一个，界面不暴露）；连续缩放每格 ×${DEFAULT_ZOOM_RATIO}，`
   + `1 / 10 / 100 光年均可停留。`);

@@ -772,6 +772,11 @@ export function start(system) {
     followMotion: true, // 选中天体后：时间继续走，镜头跟着目标一起公转
   };
 
+  // 紧凑界面判定：竖屏窄屏或横屏手机，与 style.css 的断点保持一致。
+  // 桌面也能手动折叠左侧栏，这里只决定「默认是否收起」。
+  const compactUI = () => window.innerWidth <= 760 ||
+    (window.innerHeight <= 520 && window.innerWidth <= 960);
+
   // ---------- 跟随镜头状态 ----------
   // follow 保存「相机相对选中天体的偏移」，而不是绝对相机坐标：天体每帧沿轨道
   // 移动，把偏移加到它当前的世界坐标上就是新相机位置，飞行途中也不会飞到空点。
@@ -783,7 +788,7 @@ export function start(system) {
 
   const gui = new dat.GUI({ autoPlace: false });
   // 移动端默认收起控制面板：手机上右上角那一大块会盖住大半个屏幕
-  if (window.innerWidth <= 760) { try { gui.close(); } catch (_) {} }
+  if (compactUI()) { try { gui.close(); } catch (_) {} }
   const guiContainer = document.getElementById('gui-container');
   if (guiContainer) guiContainer.appendChild(gui.domElement);
   gui.add(settings, 'timeScale', 0, 200).name(t('timeScale'));
@@ -818,7 +823,6 @@ export function start(system) {
       setBodyExaggeration(system, v);
       applyExaggerationToNodes(nodes, v);
       setCurrentExaggeration(v);
-      updateBadge(v);
     });
 
   // 彗尾强度：彗星只在接近太阳时才活动，长周期彗星在远日点要"等很久"才亮起来。
@@ -828,15 +832,8 @@ export function start(system) {
     gui.add(settings, 'tailGain', 0.5, 3, 0.1).name(t('tailGain'));
   }
 
-  // 角标：常驻显示当前放大倍数，明确"这是为了看清小天体而做的视觉放大"
-  const badge = document.createElement('div');
-  badge.id = 'exaggerationBadge';
-  document.body.appendChild(badge);
-  function updateBadge(f) {
-    const txt = Number.isInteger(f) ? String(f) : f.toFixed(1);
-    badge.textContent = t('badge', txt);
-  }
-  updateBadge(settings.bodyExaggeration);
+  // 左下角「视觉放大 ×N（比例不变）」角标已按需求彻底移除：
+  // 它既挡视野又对理解 3D 画面没有帮助，放大倍数仍可在右上角控制面板里看到。
   if (views.length > 1) {
     const labels = views.map((v) => viewName(v.label));
     // 默认选中与 camera.frameTo 对应的那一档（views[0] 不一定就是默认视角）；
@@ -960,8 +957,7 @@ export function start(system) {
     for (const [, sc] of deepSkyShowcases) {
       // 聚焦时只略放大（1.6×）便于辨认，不再 3× 铺满；移动端再收 0.7×，
       // 否则星云 sprite 在窄屏里占比过大（这正是之前「星云还是过大」的主因之一）。
-      const mob = window.innerWidth <= 760;
-      const boost = (sc.visible ? 2.2 : 1) * (mob ? 0.7 : 1);
+      const boost = (sc.visible ? 2.2 : 1) * (compactUI() ? 0.7 : 1);
       sc.scale.setScalar((sc.userData.baseScale ?? 1) * f * boost);
       sc.traverse((o) => { if (o.isPoints) o.material.size = 0.035 * f * boost; });
     }
@@ -1113,7 +1109,6 @@ export function start(system) {
   let closeup = null;
   let lastVisibilitySpan = 0;  // 上次刷新比例尺文案时的视野跨度
   let lastNear = -1;
-  let backdropBtn = null;
   let backdropCount = 0;       // 当前视锥内的天体数（含焦点本身）
 
   const _ndcCam = [0, 0, 0];
@@ -1227,26 +1222,10 @@ export function start(system) {
     isMoving = true;
   }
 
-  /** 换一个背景方位：视角一转，背景里的远处天体就换成另一批。 */
-  function cycleBackdrop() {
-    if (!closeup || !follow || closeup.backdrops.length < 2) return;
-    closeup.backdropIndex = (closeup.backdropIndex + 1) % closeup.backdrops.length;
-    const b = closeup.backdrops[closeup.backdropIndex].dir;
-    scene.updateMatrixWorld(true);
-    follow.object.getWorldPosition(_focusWp);
-    const want = standDirection(b).multiplyScalar(
-      Math.max(1e-15, focusDistanceLy() * UNITS_PER_LY));
-    controls.target.copy(_focusWp);
-    camera.position.copy(_focusWp).add(want);
-    camera.lookAt(_focusWp);
-    follow.want.copy(want);
-    follow.offset.copy(want);
-    follow.lastPos.copy(_focusWp);
-    isMoving = false;
-    updateBackdropVisibility();
-    applyFocusAnchorScale();
-    updateBackdropUI();
-  }
+  // 「换个背景」按钮与方位轮换函数已移除：背景方位只在进入特写时于后台
+  // 随机挑选一次，之后视角完全交给鼠标。旧实现每次点击都把相机强行摆回某个
+  // 预设方位（camera.position / follow.offset / follow.want 全被覆写），用户拖出来的方向会被覆盖，
+  // 观感上就是「视野被锁住」。
 
   function updateStarPortraits(dtSec) {
     if (!starPortraits.size || !TIERS) return;
@@ -1311,13 +1290,17 @@ export function start(system) {
     const inner = TIERS.length - 1;
     if (currentTier !== inner) applyTier(inner, { instant: true, focus: wp });
     const closeLy = closeupDistanceLy(def.radiusSun);
+    const backdrops = buildBackdrops(def, obj);
+    // 后台随机选一个背景方位，界面不暴露按钮、也不允许手动轮换。
+    const backdropIndex = backdrops.length > 1
+      ? Math.floor(Math.random() * backdrops.length) : 0;
     closeup = {
       defId: def.id,
       radiusLy: starRadiusLy(def.radiusSun),
       minLy: closeLy * 0.45,
       maxLy: 1e5,                  // 一路连续缩回 10 万光年全景
-      backdrops: buildBackdrops(def, obj),
-      backdropIndex: 0,
+      backdrops,
+      backdropIndex,
     };
 
     const radiusU = starRadiusUnits(def.radiusSun);
@@ -1330,7 +1313,7 @@ export function start(system) {
     camera.updateProjectionMatrix();
     lastNear = camera.near;
 
-    const b = closeup.backdrops[0]?.dir ?? [0, 0.42, 1];
+    const b = closeup.backdrops[closeup.backdropIndex]?.dir ?? [0, 0.42, 1];
     const want = standDirection(b).multiplyScalar(closeU);
     controls.target.copy(wp);
     camera.position.copy(wp).add(want);
@@ -1386,7 +1369,8 @@ export function start(system) {
     title.className = 'bn-title';
     title.textContent = systemName(system.label ?? system.id);
     head.appendChild(title);
-    // 移动端折叠按钮：手机上默认收起，只留标题栏，点一下展开（避免盖住 3D 主屏）
+    // 折叠按钮全尺寸可用：桌面也能收起左侧栏把 3D 主屏让出来；
+    // 手机（竖屏/横屏）默认收起，只留标题栏，点一下展开。
     const bnToggle = document.createElement('button');
     bnToggle.type = 'button';
     bnToggle.className = 'bn-toggle';
@@ -1400,7 +1384,7 @@ export function start(system) {
     // 上级 / 跨层级导航统一交给顶部的宇宙导航条（面包屑 + 上下级 + 宇宙地图）。
     // 这里不再塞只认 parentSystem 的返回按钮 —— 那正是「太阳系回不去银河系」的根因。
     nav.appendChild(head);
-    if (window.innerWidth <= 760) nav.classList.add('collapsed');
+    if (compactUI()) nav.classList.add('collapsed');
     syncBnToggle();
     // 星系肖像页：用一句话点出这个星系的真实形态，和画面互相印证
     if (system.portraitCaption) {
@@ -1761,17 +1745,28 @@ export function start(system) {
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   });
 
+  // 3D 拾取 + 「单击空白退出聚焦」。进入天体特写后相机被跟随态接管，过去只能
+  // 一直往外滚 30+ 格缩到 10 万光年才自动解锁；现在单击画面空白处（没点中
+  // 任何天体、且鼠标几乎没移动，即不是拖拽转视角）就立刻恢复自由视野。
+  const UI_HIT_SELECTOR = '#bodyNav, #planetInfo, #scaleBar, #universeNav, ' +
+    '#universeMap, #gui-container, .lang-toggle, #followBadge';
+  let blankDown = null;
   window.addEventListener('mousedown', (e) => {
-    // 点在左侧菜单 / 信息卡上时不要触发 3D 拾取，否则会误聚焦
-    if (e.target && e.target.closest && e.target.closest('#bodyNav, #planetInfo')) return;
+    if (e.target && e.target.closest && e.target.closest(UI_HIT_SELECTOR)) return;
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObjects(raycastTargets, false);
-    if (!hits.length) return;
-    const id = hits[0].object.userData.bodyId;
-    if (!id) return;
-    selectBody(id);
+    const id = hits.length ? hits[0].object.userData.bodyId : null;
+    if (id) { blankDown = null; selectBody(id); return; }
+    blankDown = { x: e.clientX, y: e.clientY };
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (!blankDown) return;
+    const moved = Math.hypot(e.clientX - blankDown.x, e.clientY - blankDown.y);
+    blankDown = null;
+    if (moved > 6) return;               // 这是拖拽转视角，不能误退出
+    if (follow || selected) exitFocus(); // 单击空白 = 一键退出聚焦
   });
 
   // ---------- 动画：真实时间驱动的开普勒运动 ----------
@@ -2031,41 +2026,20 @@ export function start(system) {
 
   let scaleBar = null;
   function buildScaleBar() {
-    // 单档页面（星系形态页只有一个全景视野）不画档位条：一条孤零零的
-    // 大按钮没有可切的东西，视野跨度已经写在左侧形态说明里。
+    // 比例尺只保留「− 当前尺度 ＋」三个元素，固定在右下角当参考。
+    // 6 档按钮、说明文字、「换个背景」按钮、折叠胶囊全部去掉：它们把主屏
+    // 中间整条挡住，在手机上占地比 3D 画面还多。
     if (!TIERS || TIERS.length < 2) return;
     const bar = document.createElement('div');
     bar.id = 'scaleBar';
     bar.className = 'scale-bar';
-    const label = document.createElement('div');
-    label.className = 'sb-label';
-    label.append(document.createTextNode(t('scaleLabel')));
-    label.appendChild(document.createElement('b'));
-    bar.appendChild(label);
-    const row = document.createElement('div');
-    row.className = 'sb-tiers';
-    TIERS.forEach((tier, i) => {
-      const btn = document.createElement('button');
-      btn.className = 'sb-tier';
-      btn.textContent = tierShort(tier);
-      btn.title = t('tierTitle', tierLabel(tier));
-      btn.dataset.tier = String(i);
-      btn.onclick = () => {
-        // 点比例条 = 退出跟随 / 恒星特写，回到未聚焦的宏观 6 档浏览
-        if (follow) stopFollow();
-        applyTier(i, { instant: true });
-      };
-      row.appendChild(btn);
-    });
-    bar.appendChild(row);
-    // 移动端紧凑控件：只显示「当前尺度 + 加减」，放在底部当参考，不占主屏。
-    // 桌面不显示（完整 6 档条更直观）；移动端折叠态由 CSS 接管显示，展开态隐藏。
     const compact = document.createElement('div');
     compact.className = 'sb-compact';
     const sbMinus = document.createElement('button');
     sbMinus.type = 'button';
     sbMinus.className = 'sb-minus';
     sbMinus.textContent = '−';          // 缩小：往更大尺度切一档
+    sbMinus.title = t('scaleMinus');
     sbMinus.setAttribute('aria-label', t('scaleMinus'));
     const sbNow = document.createElement('span');
     sbNow.className = 'sb-now';
@@ -2073,80 +2047,40 @@ export function start(system) {
     sbPlus.type = 'button';
     sbPlus.className = 'sb-plus';
     sbPlus.textContent = '+';           // 放大：往更小尺度切一档
+    sbPlus.title = t('scalePlus');
     sbPlus.setAttribute('aria-label', t('scalePlus'));
-    sbMinus.onclick = (e) => {
-      e.stopPropagation();
+    const stepTier = (dir) => {
+      // 点加减时若正跟随某天体，先退出聚焦再切宏观档位。
       if (follow) stopFollow();
-      if (currentTier > 0) applyTier(currentTier - 1, { instant: true });
+      const next = Math.max(0, Math.min(TIERS.length - 1, currentTier + dir));
+      if (next !== currentTier) applyTier(next, { instant: true });
     };
-    sbPlus.onclick = (e) => {
-      e.stopPropagation();
-      if (follow) stopFollow();
-      if (currentTier < TIERS.length - 1) applyTier(currentTier + 1, { instant: true });
-    };
+    sbMinus.onclick = (e) => { e.stopPropagation(); stepTier(-1); };
+    sbPlus.onclick = (e) => { e.stopPropagation(); stepTier(1); };
     compact.append(sbMinus, sbNow, sbPlus);
     bar.appendChild(compact);
-    // 背景方位：三维星空里换个视线方向，背景里的远处天体就换成另一批。
-    const backdrop = document.createElement('button');
-    backdrop.className = 'sb-backdrop';
-    backdrop.onclick = () => cycleBackdrop();
-    bar.appendChild(backdrop);
-    backdropBtn = backdrop;
-    const hint = document.createElement('div');
-    hint.className = 'sb-hint';
-    hint.textContent = t('scaleHint');
-    bar.appendChild(hint);
-    // 移动端折叠按钮：默认收成底部一个胶囊，点开才是完整档位条
-    const sbToggle = document.createElement('button');
-    sbToggle.type = 'button';
-    sbToggle.className = 'sb-toggle';
-    const syncSbToggle = () => {
-      const collapsed = bar.classList.contains('collapsed');
-      sbToggle.textContent = collapsed ? t('scaleExpand') : t('scaleCollapse');
-      sbToggle.setAttribute('aria-label', sbToggle.textContent);
-    };
-    sbToggle.onclick = (e) => { e.stopPropagation(); bar.classList.toggle('collapsed'); syncSbToggle(); };
-    bar.insertBefore(sbToggle, bar.firstChild);
     document.body.appendChild(bar);
     scaleBar = bar;
-    if (window.innerWidth <= 760) bar.classList.add('collapsed');
-    syncSbToggle();
   }
-  function updateBackdropUI() {
-    if (!backdropBtn) return;
-    const active = !!closeup && closeup.backdrops.length > 1;
-    backdropBtn.style.display = active ? '' : 'none';
-    if (active) backdropBtn.textContent = t('backdropBtn',
-      closeup.backdropIndex + 1, closeup.backdrops.length, Math.max(0, backdropCount - 1));
-  }
+  // 背景方位不再有 UI：进入特写时后台随机选一次，用户不能也不需要手动切换。
+  // 保留这个空函数，是为了不改动散落在 stopFollow / setStarCloseup 等处的调用点。
+  function updateBackdropUI() { /* intentionally empty */ }
   function updateScaleBarUI(i, spanOverride = null) {
     if (!scaleBar) return;
-    const b = scaleBar.querySelector('.sb-label b');
-    // 恒星特写时显示当前真实视野（AU / 公里），而不是写死的档位标签
-    if (b) b.textContent = spanOverride != null
-      ? t('focusSpan', spanText(spanOverride))
-      : tierLabel(TIERS[i]);
-    for (const btn of scaleBar.querySelectorAll('.sb-tier')) {
-      btn.classList.toggle('active', spanOverride == null && Number(btn.dataset.tier) === i);
-    }
-    const hint = scaleBar.querySelector('.sb-hint');
-    if (hint) hint.textContent = t(spanOverride != null ? 'focusScaleHint' : 'scaleHint');
-    // 移动端紧凑控件的「当前尺度」同步：特写时显真实视野，否则显档位
+    // 特写时显示真实视野跨度，宏观档位时显示档位短标签。
     const now = scaleBar.querySelector('.sb-now');
     if (now) now.textContent = spanOverride != null ? spanText(spanOverride) : tierShort(TIERS[i]);
   }
   buildScaleBar();
-  updateBackdropUI();   // 未聚焦时先收起「换个背景」按钮
 
-  // 移动端：从手机旋转/放大到桌面时，自动展开被收起的面板，尊重桌面布局
-  let _wasMobile = window.innerWidth <= 760;
+  // 从手机旋转/放大到桌面时，把移动端默认收起的左侧栏展开（桌面可再手动折叠）。
+  let _wasCompact = compactUI();
   window.addEventListener('resize', () => {
-    const mobile = window.innerWidth <= 760;
-    if (_wasMobile && !mobile) {
+    const compact = compactUI();
+    if (_wasCompact && !compact) {
       document.getElementById('bodyNav')?.classList.remove('collapsed');
-      scaleBar?.classList.remove('collapsed');
     }
-    _wasMobile = mobile;
+    _wasCompact = compact;
   });
 
   // 深链必须等首帧把开普勒轨道位置写进 group 后再取世界坐标：
