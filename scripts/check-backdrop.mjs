@@ -26,7 +26,7 @@ const {
   DEFAULT_ZOOM_RATIO,
 } = BD;
 const LAD = await import('../src/zoom-ladder.js');
-const { SUN_RADIUS_LY, UNITS_PER_LY, closeupDistanceLy } = LAD;
+const { SUN_RADIUS_LY, UNITS_PER_LY, closeupDistanceLy, revealDistanceLy } = LAD;
 
 const UP = [0, 1, 0];
 const FOV = 45;
@@ -97,6 +97,18 @@ assert.equal(continuousZoom(7.3, 100, { minLy, maxLy, neighbors: [4.24, 550, 160
 assert.equal(continuousZoom(maxLy, 100, { minLy, maxLy }), maxLy, '最外要钳住');
 assert.equal(continuousZoom(minLy, -100, { minLy, maxLy }), minLy, '最内要钳住');
 assert.ok(continuousZoom(10, -50, { minLy, maxLy }) < 10, '往内滚是放大');
+
+// 恒星特写的「松绑」门槛：球退化成一个点之后就该交还自由视角，
+// 不能再要求用户一路滚 20+ 格到 10 万光年（那正是「只有恒星像被锁住」的根因）。
+const entryLy = closeupDistanceLy(680);
+const unlockAt = revealDistanceLy(680) * 1.5;
+let unlockLy = entryLy, unlockSteps = 0;
+while (unlockLy < unlockAt && unlockSteps < 12) {
+  unlockLy = continuousZoom(unlockLy, 100, { minLy, maxLy });
+  unlockSteps++;
+}
+assert.ok(unlockSteps <= 4,
+  `恒星特写应在 4 格内松绑（9R → 球退化成点），实际 ${unlockSteps} 格`);
 
 // ---- 3. 真实银河系三维坐标 ----
 function toNodeModule(code) {
@@ -191,11 +203,21 @@ for (const needle of [
   'backdropNote', 'backdropAnchor',
   // 背景方位只在后台随机选一次，界面不再暴露按钮 / 轮换入口
   'Math.random() * backdrops.length', 'closeup.backdropIndex',
+  // 任意视角都有一层方向固定的远景星点；特写可随时松绑、不再钉死裁剪面
+  'skyPoints', 'if (skyPoints) skyPoints.position.copy(camera.position)',
+  'revealLy: revealDistanceLy(def.radiusSun)', 'closeup.revealLy * 1.5',
 ]) {
   assert.ok(main.includes(needle), `main.js 缺少三维背景接线: ${needle}`);
 }
-for (const removed of ['sb-backdrop', 'backdropBtn', 'cycleBackdrop()']) {
-  assert.ok(!main.includes(removed), `main.js 仍暴露换背景 UI: ${removed}`);
+for (const removed of [
+  'sb-backdrop', 'backdropBtn', 'cycleBackdrop()',
+  // 旧的「恒星特写 = 锁死模式」三件套：强跳最内档 / 钉死 near / !follow 才刷背景
+  'if (currentTier !== inner) applyTier(inner',
+  'camera.near = Math.max(1e-15, radiusU * 0.02)',
+  'if (!TIERS || !follow) return 0',
+  'applyTier(best, { instant: true, focus: keepFocus })',
+]) {
+  assert.ok(!main.includes(removed), `main.js 仍残留旧的锁定式特写 / 换背景 UI: ${removed}`);
 }
 for (const banned of [
   'zoomStops(', 'nextZoomStop(', 'focusStops', 'distanceTo(origin) / UNITS_PER_LY',

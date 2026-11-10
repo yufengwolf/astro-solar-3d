@@ -727,6 +727,43 @@ export function start(system) {
       if (portrait) (galaxyGroup || scene).add(portrait.group);
     }
   }
+
+  // ---------- 远景星空：与相机同心、方向固定的天球星点 ----------
+  // 银盘点云是「盘内恒星」：镜头贴到某颗恒星再把视线转向盘外时，45° 视锥里
+  // 可能一颗都不剩，画面整片变黑（实测拖拽 94° 后可见天体 8→2）。这层球壳
+  // 代表更远、方向固定的星空：任何视角都有星点，转镜头时按方向切换，仍是
+  // 三维透视，而不是一张贴在屏幕上的静态背景图。
+  let skyPoints = null;
+  if (system.scaleTiers) {
+    const N = 2400;
+    const skyRng = mulberry32(20261110);
+    const skyPos = new Float32Array(N * 3);
+    const skyCol = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const u = skyRng() * 2 - 1;
+      const phi = skyRng() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      const R = 120;                  // 落在 camera.far = 200 之内
+      skyPos[i * 3] = R * s * Math.cos(phi);
+      skyPos[i * 3 + 1] = R * u;
+      skyPos[i * 3 + 2] = R * s * Math.sin(phi);
+      const b = 0.30 + skyRng() * 0.48;
+      skyCol[i * 3] = b * (0.86 + skyRng() * 0.14);
+      skyCol[i * 3 + 1] = b * (0.90 + skyRng() * 0.10);
+      skyCol[i * 3 + 2] = b;
+    }
+    const skyGeo = new THREE.BufferGeometry();
+    skyGeo.setAttribute('position', new THREE.Float32BufferAttribute(skyPos, 3));
+    skyGeo.setAttribute('color', new THREE.Float32BufferAttribute(skyCol, 3));
+    skyPoints = new THREE.Points(skyGeo, new THREE.PointsMaterial({
+      size: 1.3, sizeAttenuation: false, vertexColors: true,
+      transparent: true, opacity: 0.85, depthWrite: false,
+      blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
+    }));
+    skyPoints.frustumCulled = false;
+    scene.add(skyPoints);
+  }
+
   // 远景星系（背景点缀，静态不随银盘自转，纯视觉、不可交互）
   if (system.otherGalaxies?.length) {
     for (const og of system.otherGalaxies) {
@@ -1132,8 +1169,12 @@ export function start(system) {
    * 1 光年视野里照样看得见 100 / 550 光年外的天体；旋转镜头，入画的背景随之变化。
    */
   function updateBackdropVisibility() {
-    if (!TIERS || !follow) return 0;
-    scene.updateMatrixWorld(true);
+    // 自由视角也要按视锥刷新：退出跟随后，远处天体不会因为「档位距离窗口」
+    // 被整体清空，星空始终是三维的；转镜头时入画集合随之变化。
+    if (!TIERS) return 0;
+    // 不再每帧强制全场景矩阵更新：下面每个 body 的 getWorldPosition 自带向上
+    // 刷新其父链，composer.render() 渲染前也会统一更新一次。去掉这行可省掉每帧
+    // 一次 O(全场景) 的矩阵重算（银河场有上千点），是真实 GPU 上的卡顿源。
     let count = 0;
     for (const [id, node] of byId) {
       node.group.getWorldPosition(_bodyWp);
@@ -1141,10 +1182,13 @@ export function start(system) {
       node.group.visible = show;
       if (show) count++;
       // 跟随态左侧菜单保留全部条目：拖视角时菜单不闪，且随时能点去别的天体。
-      const row = navRows.get(id);
-      if (row) row.style.display = '';
+      // 自由态仍沿用各档自己的菜单过滤，不在这里改写。
+      if (follow) {
+        const row = navRows.get(id);
+        if (row) row.style.display = '';
+      }
     }
-    for (const [, el] of navGroups) el.style.display = '';
+    if (follow) for (const [, el] of navGroups) el.style.display = '';
     backdropCount = count;
     return count;
   }
@@ -1260,12 +1304,19 @@ export function start(system) {
       p.rim.visible = p.corona.visible = a > 0.15;
     }
 
-    if (!follow) return;
-    // 跟随态：每帧重算视锥背景与屏幕空间点尺寸（旋转视角会改变入画集合）。
+    // 跟随态与自由态都按视锥刷新背景与屏幕空间点尺寸：旋转视角会改变入画集合，
+    // 退出跟随后天体也不会被「档位距离窗口」整体清空。
     updateBackdropVisibility();
     applyFocusAnchorScale();
-    if (closeup) {
-      const near = Math.max(1e-15, closeup.radiusLy * UNITS_PER_LY * 0.02);
+    // 近裁剪面跟着取景尺度走，而不是钉死在 1e-10：9R 特写时它是 1e-9 量级，
+    // 回到宏观档位自动放大，far/near 比不再长期悬在 1e11，远景星点不会被深度精度吃掉。
+    if (TIERS) {
+      const dUnits = Math.max(1e-12, camera.position.distanceTo(controls.target));
+      // near 必须跟着取景尺度走，不能钉死在 1e-9：比邻星 / 南门二这类小恒星的
+      // 特写距离只有 1e-10~3e-11 单位，1e-9 的硬下限会把整颗球裁在近裁剪面之外
+      // （JS 里 group.visible=true，画面上却根本看不到球）。renderer 已开
+      // logarithmicDepthBuffer，near 取 1e-13 量级也不会损失背景深度精度。
+      const near = Math.max(1e-13, dUnits * 0.01);
       if (Math.abs(near - lastNear) > near * 0.05) {
         camera.near = near;
         camera.far = 200;
@@ -1281,37 +1332,40 @@ export function start(system) {
     }
   }
 
-  /** 聚焦恒星（菜单 / 3D 拾取 / 外链 / hash 共用）：自动落到 9×真实半径的特写，
-   *  并把镜头摆到「远处星群落在焦点背后」的方位，让三维背景从第一帧就有内容。 */
+  /** 聚焦恒星（菜单 / 3D 拾取 / 外链 / hash 共用）：一次性把镜头放到 9×真实半径，
+   *  让球从第一帧就显形，方位挑一个「远处天体落进画面」的方向。
+   *  这里只是**取景动作**，不是常驻的「特写模式」：不再强跳最内档，也不再把
+   *  近裁剪面 / 缩放范围钉死，之后视角完全交给鼠标，随时可拖、可缩、可退出。 */
   function setStarCloseup(def, obj) {
     if (!TIERS || !starPortraits.has(def.id)) return;
     const wp = new THREE.Vector3();
     obj.getWorldPosition(wp);
-    const inner = TIERS.length - 1;
-    if (currentTier !== inner) applyTier(inner, { instant: true, focus: wp });
     const closeLy = closeupDistanceLy(def.radiusSun);
     const backdrops = buildBackdrops(def, obj);
     // 后台随机选一个背景方位，界面不暴露按钮、也不允许手动轮换。
-    const backdropIndex = backdrops.length > 1
-      ? Math.floor(Math.random() * backdrops.length) : 0;
+    // 只在得分最高的前 3 个方位里随机：低分方位可能只入画 1~2 个天体，
+    // 转过去就是一片黑，达不到「远处天体一直在星空里」的效果。
+    const pool = Math.min(3, backdrops.length);
+    const roll = backdrops.length > 1
+      ? Math.floor(Math.random() * backdrops.length) % pool : 0;
+    const backdropIndex = (backdrops[roll]?.ids?.length ?? 0) >= 4 ? roll : 0;
+    const radiusU = starRadiusUnits(def.radiusSun);
     closeup = {
       defId: def.id,
       radiusLy: starRadiusLy(def.radiusSun),
+      // 球退化成一个点的距离：超过它就没理由再把镜头锁在这颗星上（滚轮松绑用）。
+      revealLy: revealDistanceLy(def.radiusSun),
       minLy: closeLy * 0.45,
-      maxLy: 1e5,                  // 一路连续缩回 10 万光年全景
+      maxLy: 1e5,                  // 兜底：一路连续缩回 10 万光年才退出
       backdrops,
       backdropIndex,
     };
 
-    const radiusU = starRadiusUnits(def.radiusSun);
     const closeU = closeLy * UNITS_PER_LY;
     controls.enableZoom = false;  // 滚轮改由 continuousZoom 接管，避免双重 dolly
-    setContinuousZoomRange();
-    controls.minDistance = radiusU * 1.25;   // 不允许钻进球里
-    camera.near = Math.max(1e-15, radiusU * 0.02);
-    camera.far = 200;
-    camera.updateProjectionMatrix();
-    lastNear = camera.near;
+    setContinuousZoomRange();     // 统一的连续缩放范围，不为特写另设 clamp
+    controls.minDistance = Math.max(controls.minDistance, radiusU * 1.25); // 不允许钻进球里
+    lastNear = -1;                // 下一帧按当前取景距离重算近裁剪面
 
     const b = closeup.backdrops[closeup.backdropIndex]?.dir ?? [0, 0.42, 1];
     const want = standDirection(b).multiplyScalar(closeU);
@@ -1326,7 +1380,7 @@ export function start(system) {
     lastVisibilitySpan = effectiveSpanLy(closeLy, camera.fov);
     updateBackdropVisibility();
     applyFocusAnchorScale();
-    updateScaleBarUI(inner, lastVisibilitySpan);
+    updateScaleBarUI(currentTier, lastVisibilitySpan);
     updateBackdropUI();
   }
 
@@ -1517,9 +1571,8 @@ export function start(system) {
 
   function stopFollow() {
     const wasCloseup = !!closeup;
-    // 退出前记下焦点与视野跨度：旧实现无条件 applyTier(0, instant)，把镜头
-    // 从 9R 特写一步拽回 10 万光年全景（相机、target、near、可见性全变）。
-    const keepFocus = controls.target.clone();
+    // 退出前记下视野跨度：旧实现无条件 applyTier(0, instant)，把镜头从 9R
+    // 特写一步拽回 10 万光年全景（相机、target、near、可见性全变）。
     const keepSpan = effectiveSpanLy(focusDistanceLy(), camera.fov);
     follow = null;
     isMoving = false;
@@ -1530,17 +1583,21 @@ export function start(system) {
     controls.enableZoom = true;
     followBadge.style.display = 'none';
     refreshPause();
-    // 从 9R 的真实特写退出时，得把 near / minDistance / 锚点尺寸 / 可见性
-    // 恢复成宏观档位，否则会卡在 1e-13 的近裁剪面上。但档位要按当前视野
-    // 就近选、焦点保持在当前天体，避免「解锁」瞬间画面从恒星跳到银心。
+    // 从恒星特写退出 = 原地松绑。near / 锚点尺寸 / 可见性现在每帧都按当前
+    // 视野自适应，不需要靠 applyTier 恢复；旧实现那样做会把相机瞬移到档位距离
+    // （实测 0.09 ly → 1.67 ly），观感就是「一退出画面就跳、视野被锁住」。
     if (wasCloseup && TIERS) {
+      const d = camera.position.distanceTo(controls.target);
+      controls.minDistance = Math.max(1e-12, d * 0.02);
+      controls.maxDistance = Math.max(d * 200, 60);
       let best = 0, bestD = Infinity;
       TIERS.forEach((tier, i) => {
-        const d = Math.abs(Math.log10(
+        const dd = Math.abs(Math.log10(
           Math.max(keepSpan, 1e-15) / Math.max(tier.spanLy, 1e-15)));
-        if (d < bestD) { bestD = d; best = i; }
+        if (dd < bestD) { bestD = dd; best = i; }
       });
-      applyTier(best, { instant: true, focus: keepFocus });
+      currentTier = best;             // 只同步比例尺档位标签，不动相机
+      updateScaleBarUI(best, keepSpan);
     }
     updateBackdropUI();
   }
@@ -1560,9 +1617,11 @@ export function start(system) {
     const before = follow.offset.clone();
     const actual = camera.position.clone().sub(follow.lastPos);
     // 阈值必须随取景尺度收缩：太阳系页相机偏移上百单位，0.01 足够滤掉阻尼噪声；
-    // 但银河系最小档整段偏移只有 ~4e-4，固定 0.01 会把用户每一次滚轮缩放都
-    // 判成「没动」，镜头被每帧弹回，恒星近景球永远等不到放大的那一刻。
-    const eps = Math.max(1e-9, Math.min(0.01, before.length() * 0.002));
+    // 但恒星特写时整段偏移只有 1e-8~1e-11 单位（老人星 1.44e-8、比邻星 3e-11），
+    // 拖动 1° 改变的 offset 约 offset×0.017——老人星 ~2.4e-10、比邻星 ~5e-13，
+    // 若再套一个 1e-9 的绝对下限，这些真实拖拽都会被误判成「用户没动」，
+    // 镜头被每帧弹回原处，表现就是「看得见球却拖不动 / 锁死」。所以下限也随尺度走。
+    const eps = Math.min(0.01, before.length() * 0.002);
     const userMoved = actual.distanceTo(before) > eps;
     if (userMoved) before.copy(actual);
 
@@ -1854,6 +1913,7 @@ export function start(system) {
       if (camera.position.distanceTo(homeVec) < 1) isZoomingOut = false;
     }
 
+    if (skyPoints) skyPoints.position.copy(camera.position); // 天球以相机为中心 = 无限远
     controls.update();
     updateStarPortraits(dtSec);  // 相机位姿定下来后再判恒星近景显隐与球径
     updateLabels();   // 相机/天体动完再投影，标签才不会慢一帧
@@ -2201,6 +2261,12 @@ export function start(system) {
         const minLy = closeup?.minLy ?? 1e-9;
         const maxLy = closeup?.maxLy ?? 1e5;
         const dLy = focusDistanceLy();
+        // 恒星特写：球已退化成一个点，就没理由再把镜头锁在这颗星上。
+        // 再往外滚一格即原地松绑（约 3 格，和星云 / 黑洞一致）；旧实现必须
+        // 一路缩到 10 万光年（22+ 格）才解锁，正是「只有恒星像被锁住」的根因。
+        if (e.deltaY > 0 && closeup && dLy >= closeup.revealLy * 1.5) {
+          stopFollow(); return;
+        }
         // 一路缩回 10 万光年全景后，退出跟随交给宏观 6 档浏览
         if (e.deltaY > 0 && dLy >= maxLy * 0.995) { stopFollow(); return; }
         flyFocusTo(continuousZoom(dLy, e.deltaY, {
