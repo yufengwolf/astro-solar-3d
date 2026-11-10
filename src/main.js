@@ -1479,7 +1479,7 @@ export function start(system) {
   }
 
   function updateFollowBadge(def) {
-    followBadge.textContent = t('following', bodyName(def), settings.followMotion);
+    followBadge.textContent = t('following', bodyName(def), settings.followMotion) + '  ✕';
     followBadge.classList.toggle('paused', !settings.followMotion);
     followBadge.style.display = '';
   }
@@ -1533,6 +1533,10 @@ export function start(system) {
 
   function stopFollow() {
     const wasCloseup = !!closeup;
+    // 退出前记下焦点与视野跨度：旧实现无条件 applyTier(0, instant)，把镜头
+    // 从 9R 特写一步拽回 10 万光年全景（相机、target、near、可见性全变）。
+    const keepFocus = controls.target.clone();
+    const keepSpan = effectiveSpanLy(focusDistanceLy(), camera.fov);
     follow = null;
     isMoving = false;
     closeup = null;
@@ -1543,8 +1547,17 @@ export function start(system) {
     followBadge.style.display = 'none';
     refreshPause();
     // 从 9R 的真实特写退出时，得把 near / minDistance / 锚点尺寸 / 可见性
-    // 全部恢复成宏观 6 档，否则会卡在一个 1e-13 的近裁剪面上看全景。
-    if (wasCloseup && TIERS) applyTier(0, { instant: true });
+    // 恢复成宏观档位，否则会卡在 1e-13 的近裁剪面上。但档位要按当前视野
+    // 就近选、焦点保持在当前天体，避免「解锁」瞬间画面从恒星跳到银心。
+    if (wasCloseup && TIERS) {
+      let best = 0, bestD = Infinity;
+      TIERS.forEach((tier, i) => {
+        const d = Math.abs(Math.log10(
+          Math.max(keepSpan, 1e-15) / Math.max(tier.spanLy, 1e-15)));
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      applyTier(best, { instant: true, focus: keepFocus });
+    }
     updateBackdropUI();
   }
 
@@ -1598,7 +1611,8 @@ export function start(system) {
       if (follow.offset.distanceTo(follow.want) < reach * 0.01) {
         follow.offset.copy(follow.want);
         isMoving = false;
-        if (selected) showInfo(selected);
+        // 用户主动收起过信息卡就别在落地时又弹回来。
+        if (selected && !infoDismissed) showInfo(selected);
       }
     }
 
@@ -1690,19 +1704,40 @@ export function start(system) {
       box.querySelector('.planet-info-content').appendChild(btn);
     }
     box.style.display = 'block';
+    infoDismissed = false;   // 用户选了新天体，允许镜头落地时重新展开信息卡
   }
+  // 关闭信息卡 = 纯 UI 收起，绝不动 3D 状态。
+  // 旧实现在这里调用 setActiveShowcase(null) + stopFollow()，结果用户只是想
+  // 收起一张卡片，镜头却从恒星 9R 特写瞬间跳回 10 万光年全景（实测跟随、
+  // 档位、相机、近裁剪面、可见天体等 11 项状态全变）。退出聚焦改为显式动作：
+  // Esc 或点击「跟随中」角标 → exitFocus()。
+  let infoDismissed = false;
   function closeInfo() {
+    infoDismissed = true;
+    const box = document.getElementById('planetInfo');
+    if (box) box.style.display = 'none';
+  }
+  function exitFocus() {
+    infoDismissed = true;
     const box = document.getElementById('planetInfo');
     if (box) box.style.display = 'none';
     setActiveShowcase(null);
     stopFollow();
-    // 未聚焦时保留当前宏观档位；若刚才是恒星特写，stopFollow 已把 near /
-    // 锚点尺寸 / 可见性窗口一并恢复并回到全景档。
+    // 未聚焦时保留当前宏观档位；若刚才是恒星特写，stopFollow 已按当前视野
+    // 就近恢复档位与 near / 锚点尺寸 / 可见性窗口。
     if (TIERS) return;
     isZoomingOut = true;
     controls.target.set(...homeTarget);
   }
   window.closeInfo = closeInfo;
+  window.exitFocus = exitFocus;
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && (follow || selected)) exitFocus();
+  });
+  followBadge.title = document.documentElement.lang === 'zh-CN'
+    ? '点击或按 Esc 退出聚焦' : 'Click or press Esc to exit focus';
+  followBadge.style.cursor = 'pointer';
+  followBadge.addEventListener('click', () => { if (follow || selected) exitFocus(); });
 
   function focusOn(def, object) {
     const box = document.getElementById('planetInfo');
