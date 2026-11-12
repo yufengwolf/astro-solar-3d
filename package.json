@@ -36,6 +36,7 @@
     "check:deeplinks": "node scripts/check-deeplinks.mjs",
     "check:follow": "node scripts/check-follow.mjs",
     "check:stars": "node scripts/check-stars.mjs",
+    "check:points": "node scripts/check-star-points.mjs",
     "check:backdrop": "node scripts/check-backdrop.mjs",
     "sync": "node scripts/sync.mjs"
   },

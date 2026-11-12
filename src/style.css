@@ -269,6 +269,9 @@ p {
 /* 比例尺小档才出现的邻近天体：疏散星团 / 系外行星系统 */
 .bn-item.type-opencluster .bn-dot { background: #a8c8ff; color: #a8c8ff; box-shadow: 0 0 6px #7fa8ff; }
 .bn-item.type-exoplanet .bn-dot { background: #9fe6c0; color: #9fe6c0; box-shadow: 0 0 6px #6fd6a4; }
+/* 点天体：脉冲星/白矮星/磁星、聚星系统成员（半径极小或坐标与主星重合） */
+.bn-item.type-pulsar .bn-dot { background: #9fe8ff; color: #9fe8ff; box-shadow: 0 0 6px #6fd4ff; }
+.bn-item.type-member .bn-dot { background: #c9b8ff; color: #c9b8ff; box-shadow: 0 0 6px #a98fff; }
 /* 菜单分组标题（按类型分隔，避免十几个天体挤成一长串） */
 .bn-group {
     padding: 9px 8px 4px;
@@ -414,6 +417,8 @@ p {
 .bl-item.type-blackhole { color: #ffb474; }
 .bl-item.type-opencluster { color: #b6d0ff; }
 .bl-item.type-exoplanet { color: #a8e9c8; }
+.bl-item.type-pulsar { color: #9fe8ff; }
+.bl-item.type-member { color: #c9b8ff; }
 /* 太阳系总览 / 各卫星系统页的类型配色 */
 .bl-item.type-sun { color: #ffe08a; }
 .bl-item.type-planet { color: #bcd4ff; }

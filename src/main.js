@@ -669,6 +669,9 @@ export function start(system) {
       node.mesh.material.toneMapped = false;
       node.halo = makeStarHalo(def.color ?? 0xffffff, def.glowSize ?? (def.fixedSize ?? 1) * 6);
       node.halo.userData.bodyId = def.id;
+      // 聚星成员 / 白矮星等与主星共用 J2000 坐标：多片加法混合光晕叠在同一点
+      // 会烧成一团白斑。这里只压亮度，不挪动坐标（坐标准确性是硬约束）。
+      if (def.haloOpacity != null) node.halo.material.opacity = def.haloOpacity;
       node.group.add(node.halo);
       // 宇宙层级页的成员只有 1~4px，直接点几乎点不中。挂一个全透明的
       // 拾取精灵当热区：画面上看不见，但鼠标仍能选中，点的视觉尺寸不被撑大。
@@ -938,6 +941,11 @@ export function start(system) {
     if (b.comet) return 'comet';
     if (b.navGroup === '系外行星系统') return 'exoplanet';
     if (b.navGroup === '疏散星团') return 'opencluster';
+    // 点天体按物理类别着色：脉冲星/白矮星、聚星成员、恒星级黑洞。
+    // 它们仍带 star:true 复用自发光点材质，但菜单圆点与名字标签要能区分。
+    if (b.pointOnly && b.pointKind === 'pulsar') return 'pulsar';
+    if (b.pointOnly && b.pointKind === 'member') return 'member';
+    if (b.pointOnly && b.pointKind === 'blackhole') return 'blackhole';
     if (b.star) return 'star';
     if (b.parent) return 'moon';
     if (DWARF.has(b.id)) return 'dwarf';
@@ -1017,8 +1025,12 @@ export function start(system) {
         const dLy = node.def?.dLy;
         // 下限取视野的 0.5%：比这更近的天体在该档里必然与太阳/彼此重合，
         // 显示出来只会误导（例如 10 万光年档列出 4 光年的比邻星）。
+        // 点天体不设**距离上限**：空间是三维的，1 光年视野里照样看得见
+        // 100 光年乃至 16 万光年外的天体，按「离焦点多远」裁掉它们正是
+        // 「背景只剩孤零零一个点」的根因。3D 可见性仍由视锥判定收口。
+        const pointOnly = node.def?.pointOnly === true;
         show = sid === forceId || dLy == null || dLy === 0 ||
-          (dLy >= span * 0.005 && dLy <= span * 1.5);
+          (dLy >= span * 0.005 && (pointOnly || dLy <= span * 1.5));
       }
       if (node.group) node.group.visible = show;
       const row = navRows.get(sid);
@@ -1220,11 +1232,21 @@ export function start(system) {
     }
   }
 
+  /** 点天体没有球面可以贴脸看：最小取 1e-4 光年（约 6 AU），再近只剩浮点噪声。 */
+  const POINT_MIN_LY = 1e-4;
+
+  /** 连续缩放的光年上下限：恒星 9R 特写、点天体、普通跟随各用自己的一组。 */
+  function zoomBounds() {
+    return {
+      minLy: closeup?.minLy ?? (selected?.pointOnly ? POINT_MIN_LY : 1e-9),
+      maxLy: closeup?.maxLy ?? 1e5,
+    };
+  }
+
   /** 连续缩放的相机距离上下限（OrbitControls.update 会 clamp，必须同步放宽）。 */
   function setContinuousZoomRange() {
     if (!TIERS) return;
-    const minLy = closeup?.minLy ?? 1e-9;
-    const maxLy = closeup?.maxLy ?? 1e5;
+    const { minLy, maxLy } = zoomBounds();
     controls.minDistance = Math.max(1e-15, minLy * UNITS_PER_LY);
     controls.maxDistance = maxLy * UNITS_PER_LY * 1.3;
   }
@@ -1391,6 +1413,42 @@ export function start(system) {
     updateBackdropUI();
   }
 
+  /**
+   * 点天体取景：点击名字 = 按真实距离自动切到合适的比例尺档位并对准它。
+   *
+   * 与 9R 恒星特写刻意分开：脉冲星半径 10 km、白矮星半径几千 km，按真实半径
+   * 把相机推到 9R（~1e-13 光年）会直接掉进 float32 场景坐标的精度地板，
+   * 球体画不出来、near 也裁不准。这些天体在银河系尺度上本来就是「一个点」，
+   * 价值在于坐标准确 + 名字可点 + 背景仍是三维星空，而不是贴脸看一个球。
+   *
+   * 三件必须同步的事，漏一件就会表现为「视野被锁住 / 画面跳一下」：
+   *  1) applyTier 会把 OrbitControls 的 min/maxDistance 收进本档窗口，
+   *     必须把上限放宽到能一路连续缩回 10 万光年，否则每帧被 clamp 拽回；
+   *  2) beginFollow 记下的是「切档之前」的相机偏移，必须改成切档后的偏移，
+   *     否则下一帧 updateFollow 会把相机瞬间拉回原位；
+   *  3) 可见性按三维视锥重算，背景里的远处天体才不会只剩孤点。
+   */
+  function setPointFocus(def, wp) {
+    if (!TIERS) return;
+    const tier = Math.max(0, Math.min(TIERS.length - 1, def.tier ?? currentTier));
+    applyTier(tier, { instant: true, focus: wp });
+    const dist = tierCamDist(tier);
+    controls.minDistance = Math.max(1e-15, POINT_MIN_LY * UNITS_PER_LY);
+    controls.maxDistance = Math.max(dist * 2, 1e5 * UNITS_PER_LY * 1.3);
+    controls.enableZoom = false;   // 滚轮仍由 continuousZoom 接管
+    if (follow) {
+      const off = camera.position.clone().sub(wp);
+      follow.want.copy(off);
+      follow.offset.copy(off);
+      follow.lastPos.copy(wp);
+    }
+    lastNear = -1;
+    lastVisibilitySpan = 0;
+    updateBackdropVisibility();
+    applyFocusAnchorScale();
+    updateBackdropUI();
+  }
+
   // 选中并飞向某个天体（菜单点击 / 3D 拾取共用）
   function selectBody(id, opts = {}) {
     const def = infoById.get(id);
@@ -1406,6 +1464,9 @@ export function start(system) {
         // 点恒星（菜单 / 3D 拾取 / 外链 / hash 都一样）= 自动把比例尺调到
         // 能清晰看到这颗球的真实尺度（9 倍真实半径），不再停在几光年外的针尖上。
         setStarCloseup(def, obj);
+      } else if (def.pointOnly) {
+        // 脉冲星 / 白矮星 / 磁星 / 聚星成员：没有球面可看，按距离自动选档。
+        setPointFocus(def, wp);
       } else {
         // 星云 / 星团 / 黑洞仍走档位示意展示物，保持原来的上下文浏览手感。
         applyTier(def.tier ?? currentTier, { instant: true, focus: wp });
@@ -1722,6 +1783,12 @@ export function start(system) {
       const inCloseup = !!closeup && closeup.defId === def.id && follow?.id === def.id
         && focusDistanceLy() <= revealDistanceLy(def.radiusSun) * 1.2;
       detail += '\n' + t(inCloseup ? 'starCloseupNote' : 'starCloseupHint');
+    }
+    // 点天体（脉冲星 / 白矮星 / 聚星成员）：明确告诉用户「这里就是一个点」，
+    // 并把三维视锥里还有多少远处天体写出来 —— 背景不是空壳。
+    if (def.pointOnly) {
+      detail += (detail ? '\n' : '') + t('pointBodyNote');
+      detail += '\n' + t('backdropNote', Math.max(0, backdropCount - 1));
     }
     if (closeup && closeup.defId === def.id) {
       detail += '\n' + t('backdropNote', Math.max(0, backdropCount - 1));
@@ -2227,7 +2294,10 @@ export function start(system) {
         beginFollow(def, obj, null, 'keep');
         // 恒星外链直达：把镜头推到近景球已显形的距离，否则外部 iframe
         // 打开只看到一个针尖，等于没有「直达的视觉位置」。
-        setStarCloseup(def, obj);
+        // 点天体没有近景球，改为按距离自动选档并同步跟随偏移（否则外链
+        // 打开后第一帧就被 updateFollow 拽回切档前的位置）。
+        if (def.pointOnly) setPointFocus(def, focusWp);
+        else setStarCloseup(def, obj);
       }
       setActiveShowcase(focusId);
       highlightNav(focusId);
@@ -2265,8 +2335,7 @@ export function start(system) {
       // 跟随态：固定倍率的连续对数缩放。缩放跟「周围有没有邻居」完全无关 ——
       // 三维背景里的远处天体一直都在，1 / 10 / 100 光年想停就停，不跳档。
       if (follow) {
-        const minLy = closeup?.minLy ?? 1e-9;
-        const maxLy = closeup?.maxLy ?? 1e5;
+        const { minLy, maxLy } = zoomBounds();
         const dLy = focusDistanceLy();
         // 恒星特写：球已退化成一个点，就没理由再把镜头锁在这颗星上。
         // 再往外滚一格即原地松绑（约 3 格，和星云 / 黑洞一致）；旧实现必须

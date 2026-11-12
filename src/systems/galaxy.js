@@ -1,4 +1,5 @@
 import { starfield } from './shared.js';
+import { POINT_STARS } from '../data/star-points.js';
 
 // ---------- 比例尺分档 ----------
 // 1 场景单位 = 1 kpc = 3261.56 光年。每档取景半径严格 10× 递减，
@@ -74,8 +75,8 @@ const NEARBY_STARS = [
 // 盾牌座 UY、造父四、TRAPPIST-1 等）。ra/dec 为 J2000 十进制度，取自 SIMBAD /
 // Wikipedia 及公开亮星表的可查证值；dLy、radiusSun、type、brief 取自博客仓库
 // docs/data/astro.json（radiusSun = physical.radius_km / 695700 km）。
-// 多星系统的 A/B 成员（天狼星 B、五车二 Aa…）不在此加入：它们与系统主星
-// 坐标几乎重合，属于后续「AU 级恒星系统页 + 轨道互绕」那一层。
+// 多星系统的 A/B 成员（天狼星 B、五车二 Aa…）同样有价值，统一放进下面的
+// POINT_STARS「点天体」层：它们与系统主星共用 J2000 坐标，用名字区分。
   { id: 'spica', name: '角宿一', group: '亮星与超巨星', ra: 201.2982, dec: -11.1614, dLy: 250, color: 0xc8dcff, radiusSun: 7.47, type: 'B1III-IV', brief: '两颗蓝白恒星仅约 4 天互绕一周，强潮汐力把彼此拉成蛋形（椭球变星）；与五帝座一、大角星构成春季大三角。' },
   { id: 'regulus', name: '轩辕十四', group: '邻近恒星', ra: 152.0925, dec: 11.9672, dLy: 79.3, color: 0xc8dcff, radiusSun: 4.35, type: 'B8IVn', brief: '几乎正对黄道，是月亮与行星掩星的常客。约 15.9 小时一圈的自转把它甩成明显扁球，两极表面重力比赤道强约一倍。' },
   { id: 'formalhaut', name: '北落师门', group: '邻近恒星', ra: 344.4129, dec: -29.6222, dLy: 25.1, color: 0xdce8ff, radiusSun: 1.84, type: 'A3V', brief: '南天孤悬的亮星（周围 20° 内没有别的亮星）。其尘埃碎屑盘是第一批被望远镜直接拍到的碎屑盘，盘中候选行星\'北落师门 b\'的真身至今仍有争议。' },
@@ -293,6 +294,56 @@ const nearbyBodies = NEARBY_STARS.map((o) => {
   };
 });
 
+// ---------- 点天体：所有恒星都该在这里，与半径大小无关 ----------
+// 这一层只存「真实位置 + 名字」。脉冲星半径只有 10 km、白矮星不到地球大小、
+// 聚星成员与主星 J2000 坐标几乎重合——银河系尺度上它们本来就是一个点，
+// 不该因为半径小、float32 精度或与主星重合就被排除。
+//
+// 关键取舍：不带 radiusSun、不带 deepSky。于是 main.js 不会给它挂 9R 近景球
+// （10 km 半径会把相机推到 1e-13 光年量级，float32 场景坐标与近裁剪面都会失效），
+// 点击名字改由 setPointFocus() 按 dLy 自动切到合适比例尺；远处天体依旧由
+// updateBackdropVisibility() 的三维视锥判定留在背景里。
+const pointBodies = POINT_STARS.map((o) => {
+  const [l, b] = equatorialToGalactic(o.ra, o.dec);
+  const dKpc = o.dLy / LY_PER_KPC;
+  const km = o.radiusKm;
+  const radiusText = Number.isFinite(km)
+    ? (km >= 1e6 ? `约 ${(km / 695700).toFixed(1)} 倍太阳半径`
+      : `约 ${Math.round(km).toLocaleString('en-US')} km`)
+    : null;
+  return {
+    id: o.id,
+    name: o.name,
+    nameEn: o.nameEn,
+    star: true,
+    pointOnly: true,
+    pointKind: o.pointKind,
+    size: 0.07,
+    fixedSize: 0.07,
+    glowSize: 0.42,
+    // 多颗成员共用同一系统坐标时，加法混合光晕会叠成一团白斑。压低透明度，
+    // 让「这里其实是若干颗星」在画面上仍然读作一个点。
+    ...(o.pointKind === 'member' || o.pointKind === 'pulsar'
+      ? { haloOpacity: 0.34, starBoost: 1.1 } : {}),
+    color: o.color,
+    galaxyPos: galacticToScene(l, b, dKpc),
+    dLy: o.dLy,
+    tier: tierForDistance(o.dLy),
+    navGroup: o.group,
+    info: {
+      类型: o.pointKind === 'pulsar' ? '致密残骸 · 只按点显示'
+        : o.pointKind === 'blackhole' ? '恒星级黑洞 · 只按点显示'
+          : o.pointKind === 'member' ? '聚星系统成员 · 只按点显示' : '恒星 · 只按点显示',
+      ...(o.system ? { 所属系统: o.system } : {}),
+      距离: `约 ${o.dLy < 10 ? o.dLy.toFixed(2) : Math.round(o.dLy).toLocaleString('en-US')} 光年`,
+      ...(radiusText ? { 半径: radiusText } : {}),
+      银道坐标: `银经 = ${l.toFixed(2)}°，银纬 = ${b.toFixed(2)}°`,
+      坐标来源: o.src,
+      简介: o.brief,
+    },
+  };
+});
+
 /**
  * 银河系（定性示意，非物理精确）。
  *
@@ -410,5 +461,6 @@ export default {
     },
     ...deepSkyBodies,
     ...nearbyBodies,
+    ...pointBodies,
   ],
 };

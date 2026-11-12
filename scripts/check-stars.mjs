@@ -135,7 +135,10 @@ assert.ok(Math.abs(UNITS_PER_LY - 1 / LY_PER_KPC) < 1e-12,
 const main = readFileSync(resolve(SRC, 'main.js'), 'utf8');
 assert.ok(main.includes('def.star && !def.deepSky && Number.isFinite(def.radiusSun)'),
   'main.js 必须只给带真实半径的恒星挂近景球，否则 cosmos 页的星系锚点会被画成恒星');
-const stars = galaxy.bodies.filter((b) => b.star && !b.deepSky);
+// pointOnly = 只有坐标与名字的点天体（脉冲星 / 白矮星 / 聚星成员等）。
+// 它们刻意不带 radiusSun，绝不能混进「真实半径近景球」的校验集合。
+const stars = galaxy.bodies.filter((b) => b.star && !b.deepSky && !b.pointOnly);
+const pointBodies = galaxy.bodies.filter((b) => b.pointOnly);
 const showpieces = galaxy.bodies.filter((b) => b.deepSky);
 assert.ok(stars.length >= 19, `恒星近景球覆盖不足：只有 ${stars.length} 颗`);
 for (const b of stars) {
@@ -149,6 +152,35 @@ for (const b of showpieces) {
 assert.ok(showpieces.some((b) => b.deepSky.kind === 'cluster'));
 assert.ok(showpieces.some((b) => b.id === 'sagA' && b.deepSky.kind === 'blackhole'));
 assert.equal(stars.find((b) => b.id === 'sun')?.radiusSun, 1);
+
+// ---- 4b. 点天体：值不值钱只看坐标准不准，与半径大小无关 ----
+const { POINT_STARS } = await import('../src/data/star-points.js');
+assert.ok(pointBodies.length >= 60, `点天体覆盖不足：只有 ${pointBodies.length} 个`);
+assert.equal(pointBodies.length, POINT_STARS.length, '生产配置必须完整展开 POINT_STARS');
+const ids = new Set(galaxy.bodies.map((b) => b.id));
+assert.equal(ids.size, galaxy.bodies.length, '天体 id 不得重复');
+for (const b of pointBodies) {
+  assert.equal(b.pointOnly, true, `${b.id} 必须标记为点天体`);
+  assert.equal(b.radiusSun, undefined, `${b.id} 不得带 radiusSun（否则会被拖进 9R 特写）`);
+  assert.equal(b.deepSky, undefined, `${b.id} 不得带 deepSky 展示物`);
+  assert.equal(b.fixedSize, 0.07, `${b.id} 在银河系尺度上必须仍是一个 0.07 的点`);
+  assert.ok(Number.isFinite(b.dLy) && b.dLy > 0, `${b.id} 缺少真实距离`);
+  assert.ok(Array.isArray(b.galaxyPos) && b.galaxyPos.every(Number.isFinite),
+    `${b.id} 的银道坐标换算结果无效`);
+  assert.ok(b.tier >= 0 && b.tier < SCALE_TIERS.length, `${b.id} 档位越界`);
+  assert.ok(b.nameEn && b.info?.['坐标来源'], `${b.id} 缺少英文名或坐标来源`);
+  assert.ok(!b.info?.['银道坐标']?.includes('NaN'), `${b.id} 银道坐标含 NaN`);
+}
+// 10 km 脉冲星、白矮星、聚星成员都必须真的在表里
+for (const must of ['crab_pulsar', 'vela_pulsar', 'sgr_1806_20', 'sirius_b',
+  'procyon_b', 'alphacen_a', 'capella_aa', 'castor_a1', 'epsilon_lyrae_a1']) {
+  assert.ok(ids.has(must), `缺少应收录的点天体 ${must}`);
+}
+assert.equal(pointBodies.find((b) => b.id === 'crab_pulsar')?.info?.['半径'], '约 10 km',
+  '10 km 脉冲星的半径必须如实展示，且不得参与任何几何计算');
+assert.ok(main.includes('function setPointFocus(def, wp)'), 'main.js 缺少点天体自动选档取景');
+assert.ok(main.includes('def.pointOnly'), 'main.js 缺少点天体分支');
+assert.ok(main.includes('POINT_MIN_LY'), 'main.js 缺少点天体的连续缩放下限');
 
 // ---- 5. 真实几何：6 档相机距离 × 真实恒星坐标，前 5 档必须零球 ----
 const camDistOf = (tier) => tier.radiusKpc / Math.tan((45 * Math.PI) / 360) * 1.25; // kpc

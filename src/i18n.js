@@ -74,6 +74,7 @@ const UI = {
     starRadius: (r) => `半径：约 ${r} 倍太阳半径（真实物理尺度，非示意球）`,
     starCloseupHint: '现在是「一个点」：继续放大到几十倍恒星半径，球面与日冕才会显形',
     starCloseupNote: '真实尺度特写：往外连续缩放，远处天体始终留在三维背景里',
+    pointBodyNote: '点天体：银河系尺度上它就是一个点，已按距离自动切到合适比例尺；名字是它的标识',
     backdropNote: (n) => `三维背景：视野内还有 ${n} 个天体，最近的也在几光年外`,
     backdropAnchor: (name, d) => `背景锚点：${name}（约 ${d} 外，此刻也在画面里）`,
     backdropBtn: (i, total, n) => `换个背景 ${i}/${total} · 视野内 ${n} 个天体`,
@@ -142,6 +143,7 @@ const UI = {
     starRadius: (r) => `Radius: ~${r} solar radii (true physical size, not a sketch)`,
     starCloseupHint: 'Still a point: zoom in to within a few dozen stellar radii to reveal the photosphere and corona',
     starCloseupNote: 'True-scale close-up: zoom out continuously; distant bodies stay in the 3D background',
+    pointBodyNote: 'Point-only body: it really is a single dot at this scale; the view auto-selected a fitting zoom, and its name is the identifier',
     backdropNote: (n) => `3D backdrop: ${n} other bodies share this view, the nearest several light-years away`,
     backdropAnchor: (name, d) => `Backdrop anchor: ${name}, ~${d} away and still in this view`,
     backdropBtn: (i, total, n) => `Change backdrop ${i}/${total} · ${n} bodies in view`,
@@ -237,6 +239,9 @@ const GROUP_EN = {
   '致密天体': 'Compact Objects', '球状星团': 'Globular Clusters',
   '邻近恒星': 'Nearby Stars', '疏散星团': 'Open Clusters',
   '系外行星系统': 'Exoplanet Systems',
+  '亮星与超巨星': 'Bright Stars & Supergiants',
+  '特超巨星': 'Hypergiants & LBVs',
+  '聚星系统成员': 'Multiple-star Members',
   '下级层级': 'Child levels', '上级层级': 'Parent level', '同级层级': 'Sibling levels',
 };
 const VIEW_EN = {
@@ -258,7 +263,8 @@ const INFO_KEY_EN = {
   '公转周期': 'Orbital period', '自转周期': 'Rotation period', '质量': 'Mass',
   '位置': 'Position', '视星等': 'Apparent magnitude', '光谱型': 'Spectral type',
   '发现': 'Discovered', '备注': 'Notes', '卫星数': 'Moons', '尺度': 'Scale',
-  '形态': 'Morphology',
+  '形态': 'Morphology', '半径': 'Radius', '所属系统': 'System',
+  '坐标来源': 'Coordinates source',
 };
 
 export const systemName = (s) => (isEn() ? (SYSTEM_EN[s] ?? s) : s);
@@ -274,7 +280,8 @@ export function infoValue(v) {
   s = s.replace(/约/g, '~').replace(/光年/g, 'ly').replace(/千秒差距/g, 'kpc')
     .replace(/银经/g, 'l').replace(/银纬/g, 'b')
     .replace(/天文单位/g, 'AU').replace(/公里|千米/g, 'km')
-    .replace(/（/g, '(').replace(/）/g, ')').replace(/：/g, ': ');
+    .replace(/（/g, '(').replace(/）/g, ')').replace(/：/g, ': ')
+    .replace(/，/g, ', ').replace(/、/g, ', ');
   return CJK.test(s) ? null : s;
 }
 
