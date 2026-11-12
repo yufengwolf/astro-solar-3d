@@ -70,6 +70,30 @@ const NEARBY_STARS = [
   { id: 'm6', name: '蝴蝶星团 M6', group: '疏散星团', ra: 265.0875, dec: -32.2542, dLy: 1600.0, color: 0xc8d8ff, shape: 'cluster', seed: 6001, type: '疏散星团', brief: '双筒望远镜里几十颗蓝白恒星排成蝴蝶翅膀，其中一颗橙巨星格外醒目。' },
   { id: 'peg51', name: '飞马座 51（首颗热木星母星）', group: '系外行星系统', ra: 344.3667, dec: 20.7689, dLy: 50.6, color: 0xffe0a0, radiusSun: 1.24, type: '类太阳恒星 + 热木星', brief: '1995 年在这里发现人类第一颗绕主序星运行的系外行星，开创系外行星天文学，获 2019 诺贝尔物理学奖。' },
   { id: 'kepler452', name: '开普勒 452（类地行星系统）', group: '系外行星系统', ra: 296.0042, dec: 44.2775, dLy: 1800.0, color: 0xffe8b8, radiusSun: 1.11, type: '类太阳恒星 + 超级地球', brief: '「地球 2.0」：行星轨道与恒星辐照都接近地球，位于天鹅座的宜居带内。' },
+// 2026-11-12 扩容：新增 18 颗独立恒星（角宿一、轩辕十四、天津四、海山二、
+// 盾牌座 UY、造父四、TRAPPIST-1 等）。ra/dec 为 J2000 十进制度，取自 SIMBAD /
+// Wikipedia 及公开亮星表的可查证值；dLy、radiusSun、type、brief 取自博客仓库
+// docs/data/astro.json（radiusSun = physical.radius_km / 695700 km）。
+// 多星系统的 A/B 成员（天狼星 B、五车二 Aa…）不在此加入：它们与系统主星
+// 坐标几乎重合，属于后续「AU 级恒星系统页 + 轨道互绕」那一层。
+  { id: 'spica', name: '角宿一', group: '亮星与超巨星', ra: 201.2982, dec: -11.1614, dLy: 250, color: 0xc8dcff, radiusSun: 7.47, type: 'B1III-IV', brief: '两颗蓝白恒星仅约 4 天互绕一周，强潮汐力把彼此拉成蛋形（椭球变星）；与五帝座一、大角星构成春季大三角。' },
+  { id: 'regulus', name: '轩辕十四', group: '邻近恒星', ra: 152.0925, dec: 11.9672, dLy: 79.3, color: 0xc8dcff, radiusSun: 4.35, type: 'B8IVn', brief: '几乎正对黄道，是月亮与行星掩星的常客。约 15.9 小时一圈的自转把它甩成明显扁球，两极表面重力比赤道强约一倍。' },
+  { id: 'formalhaut', name: '北落师门', group: '邻近恒星', ra: 344.4129, dec: -29.6222, dLy: 25.1, color: 0xdce8ff, radiusSun: 1.84, type: 'A3V', brief: '南天孤悬的亮星（周围 20° 内没有别的亮星）。其尘埃碎屑盘是第一批被望远镜直接拍到的碎屑盘，盘中候选行星\'北落师门 b\'的真身至今仍有争议。' },
+  { id: 'deneb', name: '天津四', group: '亮星与超巨星', ra: 310.3583, dec: 45.2803, dLy: 2615, color: 0xd8e4ff, radiusSun: 203, type: 'A2Iae', brief: '光度约为太阳的 20 万倍，是已知最亮的 A 型超巨星之一；距离估计 1400~2600 光年仍有争议（依测量口径而异），此处取约 2600 光年。' },
+  { id: 'adhara', name: '弧矢七', group: '亮星与超巨星', ra: 104.6563, dec: -28.9722, dLy: 430, color: 0xc8dcff, radiusSun: 13.9, type: 'B2II', brief: '约 470 万年前它距地球更近，曾以 -3.99 等成为全天最亮的星；今天它仍是夜空中最强的极紫外辐射源，其紫外光子主导着本地星际云的电离状态。' },
+  { id: 'alpheratz', name: '壁宿二', group: '邻近恒星', ra: 2.1000, dec: 29.1000, dLy: 97, color: 0xd0e0ff, radiusSun: 2.94, type: 'B8IV', brief: '历史上同时被算作仙女座 α 与飞马座 δ，是两座共用的一角；本身还是一对分光双星，主星比伴星亮数百倍。' },
+  { id: 'mirach', name: '奎宿九', group: '亮星与超巨星', ra: 17.4300, dec: 35.6000, dLy: 197, color: 0xffb080, radiusSun: 100, type: 'M0III', brief: '从它出发向东北跳两站就能找到仙女座大星系（M31），是深空观测的经典路标；它本身也是一颗光谱双星。' },
+  { id: 'hamal', name: '娄宿三', group: '邻近恒星', ra: 31.8000, dec: 23.5000, dLy: 65.8, color: 0xffc890, radiusSun: 15.19, type: 'K2III', brief: '白羊座最亮的星，质量仅比太阳大一点，半径却已膨胀到约 15 倍；两千多年前春分点就位于它附近，\'白羊座时代\'因此得名。' },
+  { id: 'mirfak', name: '天船三', group: '亮星与超巨星', ra: 51.0750, dec: 49.9000, dLy: 510, color: 0xffe0b0, radiusSun: 68, type: 'F5Ib', brief: '英仙座最亮的星，也是年轻疏散星团 Melotte 20 的核心成员；光度约为太阳的 5000 倍，是肉眼可见的最亮黄白超巨星之一。' },
+  { id: 'mira', name: '蒭藁增二', group: '亮星与超巨星', ra: 34.8366, dec: -2.9776, dLy: 300, color: 0xff8060, radiusSun: 367, type: 'M7IIIe', brief: '星等以约 332 天为周期在 2 等~10 等之间起伏：亮时肉眼可见，暗时需望远镜。它正剧烈流失质量，在星风中拖着一条约 13 光年长的尾巴。' },
+  { id: 'etacar', name: '海山二', group: '亮星与超巨星', ra: 161.2650, dec: -59.6845, dLy: 7500, color: 0xffe0b0, radiusSun: 60, type: 'LBV', brief: '质量（约 100~150 M☉）、半径（约 60~800 R☉）与温度随 1843 年「假超新星」大爆发剧烈变化，无法给出单一数值，故留 null；周身被自己抛出的 Homunculus …' },
+  { id: 'uyscuti', name: '盾牌座UY', group: '亮星与超巨星', ra: 276.9022, dec: -12.4664, dLy: 5871, color: 0xff7040, radiusSun: 909, type: 'M4Ia', brief: '曾以约 1708 R☉ 的旧估计闻名，最新观测把半径下修至约 909 R☉——仍接近太阳的千倍。半规则变星，约 8.5 个月内光变约 1 个星等。' },
+  { id: 'algol', name: '大陵五', group: '邻近恒星', ra: 47.0422, dec: 40.9556, dLy: 94, color: 0xd8e8ff, radiusSun: 2.73, type: 'B8V', brief: '每 2.87 天，较暗的伴星从亮星前方经过，亮度从 2.1 等骤降到 3.4 等并持续约 10 小时——宇宙级的\'眨眼\'；中国古代因此称它为\'魔星\'。' },
+  { id: 'pcygni', name: '天鹅座 P', group: '亮星与超巨星', ra: 304.4467, dec: 38.0329, dLy: 5300, color: 0xd8e8ff, radiusSun: 76, type: 'LBV', brief: '1600 年突然亮如三等星，随后缓慢回落，至今仍在以强劲星风抛射物质；与海山二同类，是\'假超新星\'现象的鼻祖。' },
+  { id: 'betapic', name: '绘架座β', group: '邻近恒星', ra: 86.8212, dec: -51.0665, dLy: 63.4, color: 0xdce8ff, radiusSun: 1.53, type: 'A6V', brief: '第一个被直接拍到的恒星碎屑盘，盘中已确认两颗巨行星（绘架座βb/c）；它还是\'绘架座β移动星群\'——一群年龄仅约 2000 万年的年轻恒星——的命名来源。' },
+  { id: 'trappist1', name: '特拉比斯特 1', group: '邻近恒星', ra: 346.6224, dec: -5.0414, dLy: 40.66, color: 0xff8060, radiusSun: 0.1192, type: 'M8V', brief: '仅比木星大一点的超冷红矮星，却拥有 7 颗地球大小的行星，其中 3~4 颗位于宜居带；所有行星紧密排列，从最内侧看出去会是天空中的\'大月亮\'。JWST 正在其大气中搜寻生命迹象。' },
+  { id: 'mucep', name: '造父四', group: '亮星与超巨星', ra: 325.8769, dec: 58.7800, dLy: 2840, color: 0xff6040, radiusSun: 1260, type: 'M2Ia', brief: '又名\'石榴星\'（Garnet Star），因石榴石般的血红色闻名；半径估计在 972~1650 R☉ 之间依口径而变，此处取 1260 R☉。它的紫外光几乎全被自身大气吸收。' },
+  { id: 'naos', name: '弧矢增二十二', group: '亮星与超巨星', ra: 120.8960, dec: -40.0031, dLy: 1093, color: 0xc0d4ff, radiusSun: 14, type: 'O5Ibf', brief: '表面温度约 42000 K，是肉眼可见的最热恒星之一；光度约为太阳的 50 万倍，星风速度高达约 2200 km/s。' },
 ];
 
 // ---------- 深空天体（只收录坐标与距离有可靠公开来源者） ----------
