@@ -110,29 +110,75 @@ for (const r of rows) {
 }
 
 groups.sort((a, b) => a.distMpc - b.distMpc);
+const groupIndex = new Map(groups.map((g, i) => [g.id, i]));
+
+// ── Table 3 全量成员星系 ────────────────────────────────────────────────
+// 之前只用它数每个群有多少成员（ncat），17262 行自身的 l/b 与 V_cmb 全丢了。
+// 这里把每一颗成员星系都落成真实三维点：方向用成员自己的银道坐标 (l,b)，
+// 距离用其所属群的实测共动距离（Table 1 Co_Moving_Distance）。成员没有各自
+// 的测距，故不按 V_cmb 做径向展开——那样会把 Finger-of-God 的速度弥散误当
+// 成真实距离，把星系群拉成一根根朝 observer 的长针。
+// 紧凑存储：Float32 位置 / Uint16 群索引 / Uint16 视向速度，base64 编码。
+const mPos = new Float32Array(members.length * 3);
+const mGroup = new Uint16Array(members.length);
+const mV = new Uint16Array(members.length);
+const mIds = [];
+let mUsed = 0;
+for (const m of members) {
+  const gid = String(m['Group ID'] ?? '').trim();
+  const gi = groupIndex.get(gid);
+  const l = num(m.l), b = num(m.b), v = num(m['V_cmb']);
+  if (gi == null || !Number.isFinite(l) || !Number.isFinite(b)) continue;
+  const p = galacticToScene(l, b, groups[gi].distMpc * 1000); // kpc，银心原点
+  if (!p.every(Number.isFinite)) continue;
+  mPos[mUsed * 3] = +p[0].toFixed(2);
+  mPos[mUsed * 3 + 1] = +p[1].toFixed(2);
+  mPos[mUsed * 3 + 2] = +p[2].toFixed(2);
+  mGroup[mUsed] = gi;
+  mV[mUsed] = Math.max(0, Math.min(65535, Math.round(v)));
+  mIds.push(String(m['2MASS ID'] ?? '').trim());
+  mUsed++;
+}
+const b64 = (arr, len) => Buffer.from(
+  arr.buffer, arr.byteOffset, len * arr.BYTES_PER_ELEMENT,
+).toString('base64');
 
 const header = `// 由 scripts/build-2mrs.mjs 生成，请勿手改。
 // 数据源：2MRS Galaxy Group Catalog, Lambert et al. (2020), Table 1 / Table 3
 //   https://github.com/TrystanScottLambert/2MRS_GroupCatalog_Dash
 // 坐标为真实银道系三维位置（kpc，银心原点），由 l/b + 实测共动距离派生。
 // 原始 CSV 存于 data/raw/（.gitignore 忽略），重建：node scripts/build-2mrs.mjs
-`;
+// Table 3 的 ${mUsed} 颗成员星系全部保留：位置 = 成员自身 l/b + 所属群实测距离，
+// 另存群索引、视向速度 V_cmb 与 2MASS ID，供上层结构页绘制真实成员星系点云。
+const _dec = (s, Ctor) => {
+  const bin = atob(s), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return new Ctor(u.buffer);
+};
 
-const body = `export const TWO_MRS_SOURCE = {
+export const TWO_MRS_SOURCE = {
   label: '2MRS 星系群表',
   text: '2MRS Galaxy Group Catalog — Lambert et al. (2020), Table 1（群）/ Table 3（成员星系）',
   url: 'https://github.com/TrystanScottLambert/2MRS_GroupCatalog_Dash',
   groups: ${groups.length},
   memberGalaxies: ${members.length},
+  memberGalaxiesUsed: ${mUsed},
 };
 
 /** 每个条目：id / alias / l,b(度) / distMpc / nmem / ncat / v(km/s) / r200(Mpc) / m200(1e12 Msun) / pos(kpc) */
 export const TWO_MRS_GROUPS = ${JSON.stringify(groups, null, 0)};
 export const TWO_MRS_COUNT = ${groups.length};
+
+/** Table 3 全量成员星系（与 TWO_MRS_GROUPS 同序无关，按 CSV 原顺序） */
+export const TWO_MRS_MEMBER_COUNT = ${mUsed};
+export const TWO_MRS_MEMBER_POS = _dec("${b64(mPos, mUsed * 3)}", Float32Array);   // 3×N，kpc
+export const TWO_MRS_MEMBER_GROUP = _dec("${b64(mGroup, mUsed)}", Uint16Array);    // 群在 TWO_MRS_GROUPS 里的索引
+export const TWO_MRS_MEMBER_V = _dec("${b64(mV, mUsed)}", Uint16Array);            // V_cmb, km/s
+export const TWO_MRS_MEMBER_IDS = ${JSON.stringify(mIds.join('\n'))}.split('\\n'); // 2MASS ID
 `;
 
-writeFileSync(OUT, header + body, 'utf8');
+writeFileSync(OUT, header, 'utf8');
 console.log(`已生成 ${OUT}`);
-console.log(`  ${groups.length} 个真实星系群 / ${members.length} 个成员星系`);
+console.log(`  ${groups.length} 个真实星系群 / ${members.length} 个成员星系（落库 ${mUsed}）`);
 console.log(`  距离范围 ${groups[0].distMpc} ~ ${groups.at(-1).distMpc} Mpc`);
 console.log(`  文件体积 ${(readFileSync(OUT).length / 1024).toFixed(0)} KB`);

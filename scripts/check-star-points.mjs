@@ -97,8 +97,17 @@ assert.equal(new Set(all.map((b) => b.id)).size, all.length, '生产配置里天
 for (const o of POINT_STARS) {
   const b = all.find((x) => x.id === o.id);
   assert.ok(b, `${o.id} 未接入 galaxy.bodies`);
-  assert.equal(b.pointOnly, true);
-  assert.equal(b.radiusSun, undefined, `${o.id} 被误挂真实半径球体`);
+  // 带真实半径的恒星（pointKind='star' 且有 radiusKm）现在会挂 9R 近景球，
+  // 不再是纯点；其余致密天体 / 聚星成员必须是纯点且绝不写 radiusSun，
+  // 否则 10 km 的中子星会被拖进 1e-13 光年的近景球。
+  const hasPortrait = o.pointKind === 'star' && Number.isFinite(o.radiusKm);
+  if (hasPortrait) {
+    assert.equal(b.pointOnly, false, `${o.id} 带真实半径，应挂近景球`);
+    assert.ok(Number.isFinite(b.radiusSun) && b.radiusSun > 0, `${o.id} 缺少真实半径`);
+  } else {
+    assert.equal(b.pointOnly, true, `${o.id} 应为纯点天体`);
+    assert.equal(b.radiusSun, undefined, `${o.id} 被误挂真实半径球体`);
+  }
   assert.equal(b.deepSky, undefined);
   assert.equal(b.nameEn, o.nameEn);
   assert.ok(b.info?.['坐标来源'] === o.src, `${o.id} 信息卡没写出坐标来源`);
@@ -119,8 +128,8 @@ assert.ok(Math.abs(siriusB.galaxyPos[0] - sirius.galaxyPos[0]) < 1e-4,
 const main = readFileSync(resolve(SRC, 'main.js'), 'utf8');
 const i18n = readFileSync(resolve(SRC, 'i18n.js'), 'utf8');
 for (const needle of [
-  'function setPointFocus(def, wp)', 'else if (def.pointOnly)',
-  'if (def.pointOnly) setPointFocus(def, focusWp)',
+  // setPointFocus 已移除：点击统一只做定位，不再按距离自动选档。
+  'setPointFocus 已移除', 'def.pointOnly', 'POINT_MIN_LY',
   'updateBackdropVisibility()', 'setContinuousZoomRange()',
   "pointOnly || dLy <= span * 1.5", "t('pointBodyNote')",
 ]) {
@@ -132,9 +141,10 @@ for (const needle of ["pointBodyNote:", "'聚星系统成员'", "'坐标来源'"
 // 两条分支必须互斥：只有带 starPortraits（= 有 radiusSun）的恒星才进 9R
 assert.ok(main.includes('if (!TIERS || !starPortraits.has(def.id)) return;'),
   'setStarCloseup 必须靠 starPortraits 把关，点天体不能被拖进 9R 特写');
-assert.ok(main.indexOf('else if (def.pointOnly)') > main.indexOf('setStarCloseup(def, obj);'),
-  'selectBody 必须先判 9R 特写、再判点天体，两条分支互斥');
+// 现行交互：近照由信息卡按钮调 setStarCloseup，点击菜单只做「定位」。
+assert.ok(main.includes('setStarCloseup(def, o)') && !main.includes('function setPointFocus'),
+  '近照必须由信息卡按钮触发，点击只做定位，不得退回按距离自动切档');
 
 console.log(`点天体目录校验通过：${POINT_STARS.length} 条带来源的 J2000 坐标，`
   + `生产配置共 ${all.length} 个天体；10 km 脉冲星 / 白矮星 / 聚星成员全部在表，`
-  + `均不进入 9R 特写，点击名字自动选档且三维背景保持可见。`);
+  + `纯点天体不进入 9R 特写，点击只做定位且三维背景保持可见。`);

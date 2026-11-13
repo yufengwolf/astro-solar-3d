@@ -155,8 +155,14 @@ assert.equal(stars.find((b) => b.id === 'sun')?.radiusSun, 1);
 
 // ---- 4b. 点天体：值不值钱只看坐标准不准，与半径大小无关 ----
 const { POINT_STARS } = await import('../src/data/star-points.js');
-assert.ok(pointBodies.length >= 60, `点天体覆盖不足：只有 ${pointBodies.length} 个`);
-assert.equal(pointBodies.length, POINT_STARS.length, '生产配置必须完整展开 POINT_STARS');
+// POINT_STARS 里带真实半径的恒星（pointKind='star' 且有 radiusKm）现在会挂
+// 9R 近景球，标记 pointOnly=false，不再属于「纯点天体」。断言对象改为
+// 「POINT_STARS 全量展开」+「纯点子集仍然够多」，与 galaxy.js 的现行设计一致。
+const allPointStars = galaxy.bodies.filter((b) => b.pointKind);
+assert.equal(allPointStars.length, POINT_STARS.length, '生产配置必须完整展开 POINT_STARS');
+assert.ok(pointBodies.length >= 40, `点天体覆盖不足：只有 ${pointBodies.length} 个`);
+assert.ok(allPointStars.length > pointBodies.length,
+  '带真实半径的恒星应升级为近景球，不能全都退化成纯点');
 const ids = new Set(galaxy.bodies.map((b) => b.id));
 assert.equal(ids.size, galaxy.bodies.length, '天体 id 不得重复');
 for (const b of pointBodies) {
@@ -178,7 +184,10 @@ for (const must of ['crab_pulsar', 'vela_pulsar', 'sgr_1806_20', 'sirius_b',
 }
 assert.equal(pointBodies.find((b) => b.id === 'crab_pulsar')?.info?.['半径'], '约 10 km',
   '10 km 脉冲星的半径必须如实展示，且不得参与任何几何计算');
-assert.ok(main.includes('function setPointFocus(def, wp)'), 'main.js 缺少点天体自动选档取景');
+// 交互已改为「点击只做定位、不按距离自动切档」（setPointFocus 已移除），
+// 这条断言随当前设计更新，防止旧自动切档逻辑回流。
+assert.ok(!main.includes('function setPointFocus'), 'main.js 又退回了按距离自动切档的旧逻辑');
+assert.ok(main.includes('def.pointOnly'), 'main.js 缺少点天体分支');
 assert.ok(main.includes('def.pointOnly'), 'main.js 缺少点天体分支');
 assert.ok(main.includes('POINT_MIN_LY'), 'main.js 缺少点天体的连续缩放下限');
 

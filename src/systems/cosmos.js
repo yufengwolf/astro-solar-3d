@@ -29,7 +29,7 @@ import { isStellarSystemNode } from '../data/stellar-orbits.js';
 import { makeStellarSystem } from '../stellar-system.js';
 import { LG_GALAXIES } from '../data/galaxies.js';
 import { TWO_MRS_GROUPS } from '../data/2mrs.js';
-import { cosmicVec, COSMIC_LY_PER_KPC } from '../data/cosmic-structures.js';
+import { cosmicVec, cosmicSource, COSMIC_LY_PER_KPC } from '../data/cosmic-structures.js';
 
 const fmt = (v) => String(Math.round(v * 100) / 100);
 
@@ -95,7 +95,21 @@ function anchorDef(m, node, navGroup, pos, isFocus, navMode = false) {
     尺度: en ? m.scaleEn : m.scaleZh,
     简介: brief,
   };
-  if (m.dLy) info.距离 = distanceText(m.dLy);
+  // deriveCosmicPositions() 把每层的「焦点」子节点放在原点，于是这些节点
+  // 相对父页中心的 dLy = 0（拉尼亚凯亚 / 室女座 / 本星系群都属此类）。
+  // 但它们在 COSMIC_REAL 里其实有真实的「到银河系距离」；不补上，菜单里
+  // 这几行就没有光年数字，看起来像「没有大小」。这里把真实测距补回来。
+  const src = m.dLy ? null : cosmicSource(m.id);
+  const realLy = src?.distMpc > 0 ? src.distMpc * 1000 * COSMIC_LY_PER_KPC : 0;
+  const shownLy = m.dLy || realLy;
+  // distMpc=0 的结构就是「我们所在」（本星系群）：没有距离可写，但也不能
+  // 留一行空白，否则在菜单里又像是数据缺失。
+  const isHere = !shownLy && src?.distMpc === 0;
+  if (shownLy) {
+    info.距离 = distanceText(shownLy) + (realLy && !m.dLy ? (en ? ' (from the Milky Way)' : '（到银河系）') : '');
+  } else if (isHere) {
+    info.距离 = en ? 'we are inside it' : '我们就在其中';
+  }
   // 有形态配置的星系：信息卡里用一句话点出它长什么样，
   // 这样在上级页「点」的旁边也有可辨识的文字说明。
   const morph = portraitOf(m.id);
@@ -143,7 +157,9 @@ function anchorDef(m, node, navGroup, pos, isFocus, navMode = false) {
     childSystemLabel: label(m),        // 信息卡按钮：完整目标名
     childSystemShort: t('childGoShort'), // 左侧菜单：短标签，别把天体名挤成省略号
     // 菜单里的距离用紧凑写法，给名字腾出空间；信息卡仍用带空格的完整写法
-    distanceText: m.dLy ? (isEnglish() ? enSpan(m.dLy) : zhSpan(m.dLy, false)) : null,
+    distanceText: shownLy
+      ? (isEnglish() ? enSpan(shownLy) : zhSpan(shownLy, false))
+      : (isHere ? (isEnglish() ? 'here' : '我们在此') : null),
     info,
   };
 }
@@ -215,32 +231,52 @@ function make2mrsMember(g, dKpc) {
   };
 }
 
-/** 取该结构真实中心邻域内的 2MRS 群，按真实相对位置归一化进画面内圈 */
-function realMembersFor(node) {
+/**
+ * 取该结构真实中心邻域内的 2MRS 群，按真实相对位置归一化进画面内圈。
+ *
+ * 这里**不能**只给叶子页补：universe → laniakea → virgo → localgroup 这条
+ * 主链每层都有下级节点，旧写法按「有没有子节点」一刀切跳过真实成员，
+ * 会把整条主链全部排除，导致「只有旁支有 2MRS、我们的链路空荡荡」。
+ * 2MRS 覆盖到约 283 Mpc，拉尼亚凯亚与室女座都在巡天范围内，数据完全够用。
+ *
+ * @returns {{list: object[], cloud: object|null}} list 是菜单/信息卡的虚拟成员
+ *   锚点；cloud 是「同一局部体积内的 Table 3 全量成员星系」点云配置，交给
+ *   main.js 渲染，让页面真正用上 17262 颗成员星系而不只是 18 个群的名字。
+ */
+function realMembersFor(node, hasKids) {
   // 本星系群页已有 ~90 个真实星系（galaxies.js），宇宙页有视界球 + 超星系团，都不叠加。
-  if (node.id === 'localgroup' || node.kind === 'universe') return [];
-  if (!['supercluster', 'cluster', 'group'].includes(node.kind)) return [];
+  if (node.id === 'localgroup' || node.kind === 'universe') return { list: [], cloud: null };
+  if (!['supercluster', 'cluster', 'group'].includes(node.kind)) return { list: [], cloud: null };
   const c = cosmicVec(node.id);
-  if (!c) return [];
+  if (!c) return { list: [], cloud: null };
   // 视野半径取该层尺度，并给小群一个 12 Mpc 下限（2MRS 最近群也在 2 Mpc 外）。
   const radius = Math.max(node.spanLy / COSMIC_LY_PER_KPC, 12000);
   const cand = [];
-  for (const g of TWO_MRS_GROUPS) {
+  for (let gi = 0; gi < TWO_MRS_GROUPS.length; gi++) {
+    const g = TWO_MRS_GROUPS[gi];
     const off = [g.pos[0] - c[0], g.pos[1] - c[1], g.pos[2] - c[2]];
     const d = Math.hypot(off[0], off[1], off[2]);
-    if (d > 1e-6 && d <= radius) cand.push({ g, off, d });
+    if (d > 1e-6 && d <= radius) cand.push({ g, gi, off, d });
   }
   cand.sort((a, b) => a.d - b.d);
   const picked = cand.slice(0, REAL_MEMBER_LIMIT);
-  if (!picked.length) return [];
+  if (!picked.length) return { list: [], cloud: null };
   const maxd = Math.max(...picked.map((p) => p.d), 1);
-  const s = 9 / maxd; // 内圈 ±9，导航锚点退到外圈
-  return picked.map(({ g, off, d }) => ({
-    node: make2mrsMember(g, d),
-    group: '真实成员',
-    pos: off.map((v) => v * s),
-    focus: false,
-  }));
+  // 主链页还有下级导航锚点（分布在 ±13），真实成员收进更小的内圈避免互相压住。
+  const inner = hasKids ? 6.2 : 9;
+  const s = inner / maxd;
+  return {
+    list: picked.map(({ g, off, d }) => ({
+      node: make2mrsMember(g, d),
+      group: '真实成员',
+      pos: off.map((v) => v * s),
+      focus: false,
+    })),
+    // 点云只画「这 18 个群各自的成员星系」，不是「以中心为球心、maxd 为半径
+    // 的球」——后者会把离中心最近的 N 个群自动围成一个球壳，正是被投诉过的
+    // 「点形成的球体」。按群索引筛选则自然呈现为 18 个方向上的真实团块。
+    cloud: { center: c, groupIdx: picked.map((p) => p.gi), scale: s },
+  };
 }
 
 /**
@@ -264,8 +300,9 @@ export function makeCosmosSystem(nodeId) {
   // 有子节点：画面里就是这些下级成员（本星系群页显示银河系/仙女座…）。
   // 叶子节点：把「上级 + 同级」摆成可点的导航锚点，任何一层都能继续走。
   // 肖像页：中心留给星系本体，导航锚点整体退到外围，不压在盘面上。
-  // 叶子分支页（除主链外的超星系团 / 星系团 / 群）补 2MRS 真实成员
-  const realMembers = kids.length ? [] : realMembersFor(node);
+  // 所有上层结构页（含主链的拉尼亚凯亚 / 室女座）都补 2MRS 真实成员，
+  // 不再按「有没有子节点」一刀切。
+  const { list: realMembers, cloud: twoMrsCloud } = realMembersFor(node, kids.length > 0);
   const members = [];
   if (node.id === 'localgroup' && !portrait) {
     // 真实坐标重建：成员来自本星系群星表，位置用真实三维坐标
@@ -360,6 +397,9 @@ export function makeCosmosSystem(nodeId) {
       // 可观测宇宙专属：以观察者为中心、半径约 465 亿光年的「视界球」——
       // 用一层星点球壳表示边界，球内体积填充稀薄场星系；星系团/超星系团在球内按真实大尺度结构分布。
       shell: node.kind === 'universe',
+      // Table 3 全量成员星系点云：只在有 2MRS 邻域的上层结构页启用，
+      // 坐标为「相对该结构真实中心」的实测银道系位置，不是太阳周边恒星。
+      twoMrs: twoMrsCloud,
       // 背景点云只用锚点做「纤维汇聚 / 暗弱伴星系」的分布依据，
       // 不再把成员画成团块；颜色与密度按成员自身数据差异化。
       anchors: bodies.map((b) => ({ pos: b.galaxyPos, color: b.color, weight: b.weight })),

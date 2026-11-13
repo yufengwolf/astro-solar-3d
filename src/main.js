@@ -758,6 +758,7 @@ export function start(system) {
   // 深空点云（OpenNGC 等）：渲染后留作可点击拾取目标；refreshTargets 也需引用，故提到外层作用域
   let deepSkyCloud = null;
   let catalogClouds = [];
+  let twoMrsCloud = null;
   if (system.galaxy) {
     galaxyField = system.galaxy.kind
       ? buildCosmosField(system.galaxy)
@@ -811,6 +812,56 @@ export function start(system) {
           deepSkyCloud = catPoints;
         }
       }
+    }
+    // 2MRS Table 3 全量成员星系点云：只取「本页 18 个真实成员群」各自的
+    // 成员星系，用与锚点相同的中心 / 归一化比例摆放。这不是太阳周边恒星球，
+    // 也不是以中心为球心的球壳——每颗点都是实测银道坐标 + 所属群实测距离，
+    // 因此自然聚成若干真实方向上的团块。
+    if (system.galaxy.twoMrs) {
+      // 1.1 MB 的 Table 3 全量数据按需加载：只有需要它的上层结构页才下载，
+      // 不让 solar.html / galaxy.html 等页面白背这个体积。
+      import('./data/2mrs.js').then(({
+        TWO_MRS_MEMBER_POS, TWO_MRS_MEMBER_V, TWO_MRS_MEMBER_GROUP,
+        TWO_MRS_MEMBER_COUNT,
+      }) => {
+        const { center, groupIdx, scale } = system.galaxy.twoMrs;
+        const wanted = new Set(groupIdx);
+        const hit = [];
+        for (let i = 0; i < TWO_MRS_MEMBER_COUNT; i++) {
+          if (wanted.has(TWO_MRS_MEMBER_GROUP[i])) hit.push(i);
+        }
+        // 局部体积很大时等距抽稀，避免上千个点把导航锚点盖住
+        const step = Math.max(1, Math.ceil(hit.length / 6000));
+        const keep = [];
+        for (let i = 0; i < hit.length; i += step) keep.push(hit[i]);
+        if (!keep.length) return;
+        const posArr = new Float32Array(keep.length * 3);
+        const colArr = new Float32Array(keep.length * 3);
+        for (let k = 0; k < keep.length; k++) {
+          const i = keep[k], j = i * 3;
+          posArr[k * 3] = (TWO_MRS_MEMBER_POS[j] - center[0]) * scale;
+          posArr[k * 3 + 1] = (TWO_MRS_MEMBER_POS[j + 1] - center[1]) * scale;
+          posArr[k * 3 + 2] = (TWO_MRS_MEMBER_POS[j + 2] - center[2]) * scale;
+          // 视向速度越大 → 越远越暖，只作微弱的真实物理量区分
+          const q = Math.min(1, TWO_MRS_MEMBER_V[i] / 16000);
+          colArr[k * 3] = 0.44 + 0.40 * q;
+          colArr[k * 3 + 1] = 0.64 + 0.12 * q;
+          colArr[k * 3 + 2] = 0.92 - 0.30 * q;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(colArr, 3));
+        const mat = new THREE.PointsMaterial({
+          size: 1.05, sizeAttenuation: false, vertexColors: true,
+          transparent: true, opacity: 0.55, depthWrite: false,
+          blending: THREE.NormalBlending, toneMapped: false, fog: false,
+        });
+        twoMrsCloud = new THREE.Points(geo, mat);
+        twoMrsCloud.frustumCulled = false;
+        twoMrsCloud.name = '2mrs:member-galaxies';
+        twoMrsCloud.userData.baseOpacity = 0.55;
+        (galaxyGroup || scene).add(twoMrsCloud);
+      }).catch(() => { /* 点云只是背景层，加载失败不影响导航与信息卡 */ });
     }
     // 银盘柔光是盘状星系专属；宇宙网加一层大椭圆辉光只会糊掉黑洞洞的空洞
     if (system.galaxy.glow !== false) {
@@ -1626,8 +1677,10 @@ export function start(system) {
       name.textContent = e.name;
       row.appendChild(dot);
       row.appendChild(name);
-      // 银河系页：菜单里直接标出距离，切档时一眼看出「这一档在看多远」
-      if (e.def?.dLy != null && e.def.dLy > 0) {
+      // 菜单里标出距离：层级页的焦点节点 dLy=0（相对本页中心），但它在
+      // COSMIC_REAL 里有真实的「到银河系距离」，由 cosmos.js 写进 distanceText。
+      // 因此不能只看 dLy > 0，否则拉尼亚凯亚 / 室女座这几行会空着没有光年数字。
+      if (e.def?.distanceText != null || (e.def?.dLy != null && e.def.dLy > 0)) {
         const dist = document.createElement('span');
         dist.className = 'bn-dist';
         dist.textContent = e.def.distanceText ?? distText(e.def.dLy);
@@ -2718,6 +2771,8 @@ export function start(system) {
               .filter((o) => o.isPoints && o.name && o.name.startsWith('catalog:'))
               .map((o) => ({ name: o.name, count: o.geometry.attributes.position.count }))
             : []),
+          // 上层结构页的 2MRS 真实成员星系点数；银河系/太阳系页应为 0
+          twoMrsPoints: twoMrsCloud ? twoMrsCloud.geometry.attributes.position.count : 0,
           visibleBodies: [...byId.entries()]
             .filter(([, n]) => n.group.visible).map(([id]) => id),
           visiblePortraits: [...starPortraits.values()].filter((p) => p.group.visible).length,

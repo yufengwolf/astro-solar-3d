@@ -308,7 +308,11 @@ const pointBodies = POINT_STARS.map((o) => {
     nameEn: o.nameEn,
     star: true,
     pointOnly: !hasPortrait,   // 有球面特写的真实恒星不再被当成「只按点显示」
-    ...(radiusSun !== undefined ? { radiusSun } : {}),
+    // radiusSun 是「挂 9R 近景球」的开关（见 main.js 的 def.radiusSun 判定）。
+    // 脉冲星 / 白矮星 / 黑洞 / 聚星成员虽有 radiusKm，但那只用于信息卡文字；
+    // 若也写进 radiusSun，10 km 的中子星会被拖进 1e-13 光年的近景球特写。
+    // 因此只有真正带半径数据的恒星（hasPortrait）才带这个字段。
+    ...(hasPortrait ? { radiusSun } : {}),
     pointKind: o.pointKind,
     size: 0.07,
     fixedSize: 0.07,
