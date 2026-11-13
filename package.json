@@ -44,6 +44,8 @@
     "check:hyg": "node scripts/check-hyg.mjs",
     "build:openngc": "node scripts/build-openngc.mjs",
     "check:openngc": "node scripts/check-openngc.mjs",
+    "build:2mrs": "node scripts/build-2mrs.mjs",
+    "check:2mrs": "node scripts/check-2mrs.mjs",
     "sync": "node scripts/sync.mjs"
   },
   "devDependencies": {

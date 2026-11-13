@@ -230,6 +230,22 @@
       "bodies": 0
     },
     {
+      "id": "hcbg",
+      "name": "武仙－北冕座长城",
+      "en": "Hercules–Corona Borealis Great Wall",
+      "kind": "supercluster",
+      "kindName": "超星系团",
+      "detail": "planned",
+      "detailName": "待细化",
+      "page": "cosmos.html",
+      "url": "cosmos.html?node=hcbg",
+      "goUrl": "go.html?node=hcbg",
+      "scale": "长轴约 100 亿光年",
+      "spanLy": 10000000000,
+      "parent": "universe",
+      "bodies": 0
+    },
+    {
       "id": "virgo",
       "name": "室女座超星系团",
       "en": "Virgo Supercluster",

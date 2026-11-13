@@ -28,6 +28,8 @@ import { hasPortrait, portraitOf } from '../portraits.js';
 import { isStellarSystemNode } from '../data/stellar-orbits.js';
 import { makeStellarSystem } from '../stellar-system.js';
 import { LG_GALAXIES } from '../data/galaxies.js';
+import { TWO_MRS_GROUPS } from '../data/2mrs.js';
+import { cosmicVec, COSMIC_LY_PER_KPC } from '../data/cosmic-structures.js';
 
 const fmt = (v) => String(Math.round(v * 100) / 100);
 
@@ -113,7 +115,7 @@ function anchorDef(m, node, navGroup, pos, isFocus, navMode = false) {
     id: m.id,
     name: label(m),
     nameEn: m.en,
-    navGroup: en ? ({ 下级层级: 'Child levels', 上级层级: 'Parent level', 同级层级: 'Sibling levels' }[navGroup] ?? navGroup) : navGroup,
+    navGroup: en ? ({ 下级层级: 'Child levels', 上级层级: 'Parent level', 同级层级: 'Sibling levels', 真实成员: 'Catalog members' }[navGroup] ?? navGroup) : navGroup,
     star: true,
     noStarGlow: isSys,
     // fixedSize 必须给：applyScale() 对每个天体都会重算 def.size，
@@ -180,6 +182,67 @@ function localGroupMembers(node, kids, focus) {
   return out;
 }
 
+// ── 2MRS 真实星系群成员 ────────────────────────────────────────────────
+// 上层结构里除「拉尼亚凯亚 → 室女座 → 本星系群」这条主链外的分支，原先在
+// NODES 树里都是叶子：点进去只有「上级 + 同级」导航锚点，没有任何属于该结构
+// 自己的天体，看起来就是空白页。这里用 2MRS 群表（Lambert et al. 2020，
+// 3022 个真实星系群，含 l/b + 实测共动距离）为每个叶子页补上真实成员：
+// 按该结构真实三维中心取邻域内最近的若干群，照 makeLocalGroupMember 的
+// 「虚拟成员」范式生成（无 url → 只弹信息卡、不跳转），不新增点云。
+const REAL_MEMBER_LIMIT = 18;
+const MPC_TO_WAN_LY = 326.156; // 1 Mpc = 3.26156 Mly = 326.156 万光年
+
+function make2mrsMember(g, dKpc) {
+  const alias = g.alias ? ` · ${g.alias}` : '';
+  const rich = g.m200 >= 50;
+  const t = Math.min(1, Math.log10(1 + g.m200) / 3);
+  const mix = (a, b) => Math.round(a + (b - a) * t);
+  const color = (mix(0x8f, 0xff) << 16) | (mix(0xa8, 0xd0) << 8) | mix(0xd0, 0x8a);
+  const spanLy = Math.max(g.r200, 0.1) * 2 * MPC_TO_WAN_LY * 1e4;
+  const dLy = dKpc * COSMIC_LY_PER_KPC;
+  const nmem = g.ncat || g.nmem;
+  return {
+    id: `2mrs-${g.id}`,
+    zh: `${rich ? '2MRS 星系团' : '2MRS 星系群'} ${g.id}${alias}`,
+    en: `${rich ? '2MRS cluster' : '2MRS group'} ${g.id}${alias}`,
+    kind: rich ? 'cluster' : 'group', detail: 'planned',
+    spanLy, dLy,
+    color, accent: `#${color.toString(16).padStart(6, '0')}`,
+    scaleZh: `直径约 ${(spanLy / 1e6).toFixed(1)} 百万光年`,
+    scaleEn: `~${(spanLy / 1e6).toFixed(1)} million light-years across`,
+    briefZh: `2MRS 星系群表实测：${nmem} 个成员星系，视向速度 ${g.v} 公里/秒，共动距离约 ${(g.distMpc * MPC_TO_WAN_LY).toFixed(0)} 万光年，维里半径约 ${(g.r200 * MPC_TO_WAN_LY).toFixed(0)} 万光年。位置由真实银道坐标与实测距离派生，非示意摆放。`,
+    briefEn: `Measured by the 2MRS group catalog: ${nmem} member galaxies, V_cmb ${g.v} km/s, comoving distance ${g.distMpc} Mpc, R200 ${g.r200} Mpc. Position derived from real Galactic coordinates and a measured distance.`,
+  };
+}
+
+/** 取该结构真实中心邻域内的 2MRS 群，按真实相对位置归一化进画面内圈 */
+function realMembersFor(node) {
+  // 本星系群页已有 ~90 个真实星系（galaxies.js），宇宙页有视界球 + 超星系团，都不叠加。
+  if (node.id === 'localgroup' || node.kind === 'universe') return [];
+  if (!['supercluster', 'cluster', 'group'].includes(node.kind)) return [];
+  const c = cosmicVec(node.id);
+  if (!c) return [];
+  // 视野半径取该层尺度，并给小群一个 12 Mpc 下限（2MRS 最近群也在 2 Mpc 外）。
+  const radius = Math.max(node.spanLy / COSMIC_LY_PER_KPC, 12000);
+  const cand = [];
+  for (const g of TWO_MRS_GROUPS) {
+    const off = [g.pos[0] - c[0], g.pos[1] - c[1], g.pos[2] - c[2]];
+    const d = Math.hypot(off[0], off[1], off[2]);
+    if (d > 1e-6 && d <= radius) cand.push({ g, off, d });
+  }
+  cand.sort((a, b) => a.d - b.d);
+  const picked = cand.slice(0, REAL_MEMBER_LIMIT);
+  if (!picked.length) return [];
+  const maxd = Math.max(...picked.map((p) => p.d), 1);
+  const s = 9 / maxd; // 内圈 ±9，导航锚点退到外圈
+  return picked.map(({ g, off, d }) => ({
+    node: make2mrsMember(g, d),
+    group: '真实成员',
+    pos: off.map((v) => v * s),
+    focus: false,
+  }));
+}
+
 /**
  * @param {string} nodeId 注册表节点 id
  * @returns {object} main.js 的 start() 可直接消费的 system 配置
@@ -201,6 +264,8 @@ export function makeCosmosSystem(nodeId) {
   // 有子节点：画面里就是这些下级成员（本星系群页显示银河系/仙女座…）。
   // 叶子节点：把「上级 + 同级」摆成可点的导航锚点，任何一层都能继续走。
   // 肖像页：中心留给星系本体，导航锚点整体退到外围，不压在盘面上。
+  // 叶子分支页（除主链外的超星系团 / 星系团 / 群）补 2MRS 真实成员
+  const realMembers = kids.length ? [] : realMembersFor(node);
   const members = [];
   if (node.id === 'localgroup' && !portrait) {
     // 真实坐标重建：成员来自本星系群星表，位置用真实三维坐标
@@ -228,12 +293,14 @@ export function makeCosmosSystem(nodeId) {
       });
     }
   } else {
+    // 有真实成员时，导航锚点整体退到外圈，把画面中心留给该结构自己的天体
+    const outer = realMembers.length > 0;
     if (parent) {
-      members.push({ node: parent, group: '上级层级', pos: [0, 0, 0], focus: true });
+      members.push({ node: parent, group: '上级层级', pos: outer ? [0, 6, -14] : [0, 0, 0], focus: !outer });
     }
     sibs.forEach((s, i) => {
       const ang = (i / Math.max(1, sibs.length)) * Math.PI * 2 + 0.5;
-      const r = 5.5 + (i % 3) * 1.6;
+      const r = (outer ? 13.4 : 5.5) + (i % 3) * 1.6;
       members.push({
         node: s, group: '同级层级',
         pos: [Math.cos(ang) * r, ((i % 3) - 1) * 0.8, Math.sin(ang) * r],
@@ -241,6 +308,8 @@ export function makeCosmosSystem(nodeId) {
       });
     });
   }
+  // 真实星表成员只给叶子页：主链 / 有下级的页面已有自己的成员，不叠加。
+  if (realMembers.length) members.push(...realMembers);
   // 兜底：至少有一个天体，否则 applyScale / fitCamera 会取不到参考天体
   if (!members.length) {
     members.push({ node, group: '下级层级', pos: [0, 0, 0], focus: true });
@@ -267,7 +336,8 @@ export function makeCosmosSystem(nodeId) {
     scaleTiers: makeTiers(node.spanLy, base, portrait ? 1 : 6),
     sunPos: [0, 0, 0],
     // 肖像页的小档焦点必须留在星系中心；否则会飞到外围的「上级」锚点上。
-    tierFocusId: portrait ? null : (focus?.id ?? members[0].node.id),
+    // 有真实星表成员的叶子页，焦点留在画面中心（结构本身），别飞到外圈的「上级」锚点
+    tierFocusId: portrait ? null : (focus?.id ?? (realMembers.length ? null : members[0].node.id)),
     timeScale: 0,
     portraitCaption: portrait
       ? `${t('morphLabel')} · ${isEnglish() ? portrait.morphEn : portrait.morphZh}\n`

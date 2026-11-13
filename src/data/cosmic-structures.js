@@ -34,6 +34,7 @@ export const COSMIC_SOURCES = {
   tully14: 'Tully et al. (2014), Nature 513, 71（拉尼亚凯亚质心 / 巨引源方向）',
   manticore: 'Manticore / Cosmicflows-3 + NED 三维超星系坐标（arXiv:2505.10682）',
   lit: '公开文献常用近似值（待接入 VizieR / NED 星表后替换）',
+  grb: 'Horváth, Bagoly, Hakkila & Tóth (2013/2014) 伽马射线暴过密度：武仙－北冕座长城',
   origin: '观测原点（我们所在）',
 };
 
@@ -62,6 +63,10 @@ export const COSMIC_REAL = {
   sculptorsc:    { ra: 12.0,     dec: -30.0,   distMpc: 90,   src: 'lit' },
   horologium:    { ra: 55.0,     dec: -50.0,   distMpc: 140,  src: 'lit' },
   piscescetus:   { ra: 15.0,     dec: 5.0,     distMpc: 120,  src: 'lit' },
+  // 宇宙学尺度的候选巨结构：红移 1.6~2.1，共动距离约 150~177 亿光年，
+  // 取中值 ~163 亿光年 ≈ 5000 Mpc；RA 17h0m / Dec +27°45' 为 GRB 过密度中心。
+  // 比近邻超星系团远 40 倍，deriveCosmicPositions() 会按方向把它放到画面边缘。
+  hcbg:          { ra: 255.0,    dec: 27.75,   distMpc: 5000, src: 'grb' },
 
   // ── 拉尼亚凯亚内的纤维 / 富团（laniakea 页成员；virgo 为焦点）──────────
   virgo:         { ra: 187.7059, dec: 12.3911, distMpc: 16.1, src: 'cf3+opengnc', ngc: 'NGC4486', z: 0.0042, dErrMpc: 1.0 },

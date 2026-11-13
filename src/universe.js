@@ -142,6 +142,15 @@ export const NODES = [
     briefZh: '横跨双鱼与鲸鱼方向的细长星系纤维，与英仙－双鱼结构相邻，是近邻宇宙网的一条主干。距离为公开文献常用值。',
     briefEn: 'An elongated galaxy filament across Pisces and Cetus, adjacent to the Perseus–Pisces chain and a main trunk of the nearby cosmic web. Distance is a published estimate.',
   }),
+  N({
+    id: 'hcbg', parent: 'universe', kind: 'supercluster', detail: 'planned',
+    zh: '武仙－北冕座长城', en: 'Hercules–Corona Borealis Great Wall',
+    url: 'cosmos.html?node=hcbg', spanLy: 1.0e10, dLy: 1.63e10, pos: [0, 0, 0],
+    color: 0xff9e8a, accent: '#ff9e8a', seed: 163000,
+    scaleZh: '长轴约 100 亿光年', scaleEn: '~10 billion light-years along its major axis',
+    briefZh: '2013 年由伽马射线暴的空间分布推断出的候选巨型结构，红移 1.6 到 2.1，共动距离约 160 亿光年，长轴约 100 亿光年，接近可观测宇宙直径的十分之一。它比近邻超星系团远几十倍，在本图里按真实方向放在视界球边缘；学界对其是否真实存在仍有争议，需后续巡天确认。',
+    briefEn: 'A candidate giant structure inferred in 2013 from a gamma-ray burst overdensity at z = 1.6–2.1. Its comoving distance is about 16 billion light-years and its major axis about 10 billion light-years, roughly a tenth of the observable universe. Tens of times farther than nearby superclusters, it is placed toward the edge of the horizon sphere along its true direction. Its existence remains debated.',
+  }),
 
   // ---- 拉尼亚凯亚层 ----
   N({
@@ -629,22 +638,31 @@ export function tree() {
     const v = cosmicVec(n.id);
     raw.set(n.id, v && ref ? sub(v, ref) : null);
   }
-  // 2) 每个父级页面按最大跨度归一化
+  // 2) 每个父级页面按跨度归一化。若存在「量级离群」的极远成员（如
+  //    武仙－北冕座长城共动距离约 5 Gpc，比近邻超星系团远 40 倍），直接取
+  //    最大值会把整层真实几何压到原点、挤成一团；这时改用 85 分位数作参考。
   const scale = {};
   for (const p of NODES) {
     const kids = NODES.filter((k) => k.parent === p.id);
     if (!kids.length) continue;
-    let maxd = 0;
-    for (const k of kids) { const rv = raw.get(k.id); if (rv) maxd = Math.max(maxd, mag(rv)); }
-    scale[p.id] = maxd > 1e-6 ? TARGET / maxd : 1;
+    const ds = kids.map((k) => mag(raw.get(k.id))).filter((d) => d > 1e-6).sort((a, b) => a - b);
+    if (!ds.length) { scale[p.id] = 1; continue; }
+    const maxd = ds[ds.length - 1];
+    const q85 = ds[Math.min(ds.length - 1, Math.floor(ds.length * 0.85))];
+    const ref = maxd > q85 * 3 ? q85 : maxd; // 只在明显离群时启用稳健参考
+    scale[p.id] = ref > 1e-6 ? TARGET / ref : 1;
   }
-  // 3) 赋 pos 与 dLy（真实距离，光年）
+  // 3) 赋 pos 与 dLy（真实距离，光年）。超出画面半径的离群成员按真实方向
+  //    截断到边缘：方向仍真实、距离文字仍是真实值，但不挤压其它成员。
   for (const n of NODES) {
     if (!n.parent) { n.pos = [0, 0, 0]; continue; }
     const rv = raw.get(n.id);
     if (!rv) continue; // 不在 COSMIC_REAL：保留原有 pos / dLy
     const s = scale[n.parent] ?? 1;
-    n.pos = [rv[0] * s, rv[1] * s, rv[2] * s];
+    let x = rv[0] * s, y = rv[1] * s, z = rv[2] * s;
+    const r = Math.hypot(x, y, z);
+    if (r > TARGET * 1.02) { const k = (TARGET * 1.02) / r; x *= k; y *= k; z *= k; }
+    n.pos = [x, y, z];
     n.dLy = mag(rv) * COSMIC_LY_PER_KPC;
   }
 })();
