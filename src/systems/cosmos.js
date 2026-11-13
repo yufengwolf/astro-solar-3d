@@ -102,18 +102,25 @@ function anchorDef(m, node, navGroup, pos, isFocus, navMode = false) {
   const v = anchorPointSize(m, node.spanLy);
   const noteSpan = en ? enSpan(m.spanLy) : zhSpan(m.spanLy, false);
 
+  // 行星 / 恒星系统（system 类）在宇宙尺度下本就是亚像素级，绝不该发光成
+  // 一颗「恒星亮点」——否则本星系群 / 上层结构的 cosmo 退化页（如
+  // cosmos.html?node=milkyway）会冒出带「太阳系」标签的亮黄白点。
+  // 降级为暗弱小锚点：保留可点击热区与信息卡，但去掉光晕、压低亮度与尺寸。
+  const isSys = m.kind === 'system';
+
   return {
     id: m.id,
     name: label(m),
     nameEn: m.en,
     navGroup: en ? ({ 下级层级: 'Child levels', 上级层级: 'Parent level', 同级层级: 'Sibling levels' }[navGroup] ?? navGroup) : navGroup,
     star: true,
+    noStarGlow: isSys,
     // fixedSize 必须给：applyScale() 对每个天体都会重算 def.size，
     // 没有 fixedSize 就按「无 realRadiusKm 的参考天体」兜成默认 6.4 场景单位，
     // 那会直接把每个星系画成横跨几百像素的大白球。size 同时给，供 createBody 用。
     fixedSize: v.fixedSize,
-    size: v.size,
-    glowSize: isFocus ? v.glowSize * 1.15 : v.glowSize,
+    size: isSys ? Math.min(v.size, 0.045) : v.size,
+    glowSize: isSys ? 0 : (isFocus ? v.glowSize * 1.15 : v.glowSize),
     starBoost: v.starBoost,
     weight: v.weight,
     pickSize: 0.62,                  // 纯交互热区，不影响画面尺寸

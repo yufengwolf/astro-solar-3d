@@ -685,15 +685,20 @@ export function start(system) {
     }
     // 恒星锚点：核自发光（提亮以触发 bloom）+ 加法混合光晕
     if (def.star && node.mesh) {
-      const c = new THREE.Color(def.color ?? 0xffffff).multiplyScalar(def.starBoost ?? 1.6);
+      // 行星 / 恒星系统（system 类）在宇宙层级里不该发光成恒星亮点：
+      // noStarGlow 时压低亮度、不挂光晕，只留一个暗弱小点 + 可点击热区。
+      const boost = def.noStarGlow ? 0.5 : (def.starBoost ?? 1.6);
+      const c = new THREE.Color(def.color ?? 0xffffff).multiplyScalar(boost);
       node.mesh.material = new THREE.MeshBasicMaterial({ color: c });
       node.mesh.material.toneMapped = false;
-      node.halo = makeStarHalo(def.color ?? 0xffffff, def.glowSize ?? (def.fixedSize ?? 1) * 6);
-      node.halo.userData.bodyId = def.id;
-      // 聚星成员 / 白矮星等与主星共用 J2000 坐标：多片加法混合光晕叠在同一点
-      // 会烧成一团白斑。这里只压亮度，不挪动坐标（坐标准确性是硬约束）。
-      if (def.haloOpacity != null) node.halo.material.opacity = def.haloOpacity;
-      node.group.add(node.halo);
+      if (!def.noStarGlow) {
+        node.halo = makeStarHalo(def.color ?? 0xffffff, def.glowSize ?? (def.fixedSize ?? 1) * 6);
+        node.halo.userData.bodyId = def.id;
+        // 聚星成员 / 白矮星等与主星共用 J2000 坐标：多片加法混合光晕叠在同一点
+        // 会烧成一团白斑。这里只压亮度，不挪动坐标（坐标准确性是硬约束）。
+        if (def.haloOpacity != null) node.halo.material.opacity = def.haloOpacity;
+        node.group.add(node.halo);
+      }
       // 宇宙层级页的成员只有 1~4px，直接点几乎点不中。挂一个全透明的
       // 拾取精灵当热区：画面上看不见，但鼠标仍能选中，点的视觉尺寸不被撑大。
       if (def.pickSize) {
