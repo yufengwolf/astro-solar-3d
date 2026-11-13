@@ -685,13 +685,20 @@ export function start(system) {
     }
     // 恒星锚点：核自发光（提亮以触发 bloom）+ 加法混合光晕
     if (def.star && node.mesh) {
-      // 行星 / 恒星系统（system 类）在宇宙层级里不该发光成恒星亮点：
-      // noStarGlow 时压低亮度、不挂光晕，只留一个暗弱小点 + 可点击热区。
-      const boost = def.noStarGlow ? 0.5 : (def.starBoost ?? 1.6);
-      const c = new THREE.Color(def.color ?? 0xffffff).multiplyScalar(boost);
-      node.mesh.material = new THREE.MeshBasicMaterial({ color: c });
-      node.mesh.material.toneMapped = false;
-      if (!def.noStarGlow) {
+      if (def.noStarGlow) {
+        // 行星 / 恒星系统（system 类，如「太阳系」）在宇宙层级里绝不该发光成
+        // 一颗恒星亮点——否则 cosmos.html?node=milkyway 等上层页会冒出带「太阳系」
+        // 标签的亮黄白点。这里只保留一个暗淡、去饱和的小锚点 + 可点击热区，
+        // 不挂加法光晕、不触发 bloom、不加恒星球体。身份靠标签与信息卡表达。
+        const c = new THREE.Color(def.color ?? 0x9aa6b8).multiplyScalar(0.26);
+        node.mesh.material = new THREE.MeshBasicMaterial({ color: c });
+        node.mesh.material.toneMapped = false;
+      } else {
+        // 真实恒星 / 星系：核自发光（提亮以触发 bloom）+ 加法混合光晕
+        const boost = def.starBoost ?? 1.6;
+        const c = new THREE.Color(def.color ?? 0xffffff).multiplyScalar(boost);
+        node.mesh.material = new THREE.MeshBasicMaterial({ color: c });
+        node.mesh.material.toneMapped = false;
         node.halo = makeStarHalo(def.color ?? 0xffffff, def.glowSize ?? (def.fixedSize ?? 1) * 6);
         node.halo.userData.bodyId = def.id;
         // 聚星成员 / 白矮星等与主星共用 J2000 坐标：多片加法混合光晕叠在同一点
