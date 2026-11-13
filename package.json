@@ -33,6 +33,7 @@
     "check": "node scripts/check-scale.mjs",
     "check:comet": "node scripts/check-comet.mjs",
     "check:universe": "node scripts/check-universe.mjs",
+    "check:cosmic": "node scripts/check-cosmic.mjs",
     "check:deeplinks": "node scripts/check-deeplinks.mjs",
     "check:follow": "node scripts/check-follow.mjs",
     "check:stars": "node scripts/check-stars.mjs",

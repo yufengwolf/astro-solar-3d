@@ -131,6 +131,10 @@ function anchorDef(m, node, navGroup, pos, isFocus, navMode = false) {
     // 肖像页的外围锚点是「导航入口」，不是这个尺度里的真实成员，
     // dLy 归零才不会被 updateTierVisibility 按距离过滤掉。
     dLy: navMode ? 0 : (m.dLy ?? 0),
+    // 层级页锚点按真实坐标归一化进画面，是「宇宙地图上的导航点」而非物理天体：
+    // 可见性由视锥收口，不该再按 dLy 距离窗口过滤（否则可观测宇宙页 span 达
+    // 930 亿光年，近邻超星系团的真实距离全落在下限之下，扩充的成员会集体消失）。
+    navAnchor: true,
     tier: navMode ? 0 : tierFor(m.dLy ?? 0, node.spanLy),
     color: m.color ?? 0xffffff,
     childSystem: href(m),

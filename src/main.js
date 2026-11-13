@@ -1133,7 +1133,10 @@ export function start(system) {
         // 100 光年乃至 16 万光年外的天体，按「离焦点多远」裁掉它们正是
         // 「背景只剩孤零零一个点」的根因。3D 可见性仍由视锥判定收口。
         const pointOnly = node.def?.pointOnly === true;
-        show = sid === forceId || dLy == null || dLy === 0 ||
+        // 层级页锚点（cosmos.js 的 navAnchor）是按真实坐标归一化的导航点，
+        // 不受距离窗口限制：可见性交给视锥，避免真实 dLy 落在窗口外被整批隐藏。
+        const navAnchor = node.def?.navAnchor === true;
+        show = sid === forceId || navAnchor || dLy == null || dLy === 0 ||
           (dLy >= span * 0.005 && (pointOnly || dLy <= span * 1.5));
       }
       if (node.group) node.group.visible = show;
