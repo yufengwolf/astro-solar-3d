@@ -1,8 +1,7 @@
 // scripts/build-hyg.mjs
 // 把 HYG Database v3.7 的恒星 CSV 转成银河系场景可用的真实坐标星场。
 // 输出 src/data/hyg-stars.js：位置/颜色为 Float32 base64，运行时 atob 解码。
-// 坐标链路与 galaxy.js 的 equatorialToGalactic→galacticToScene 完全一致，
-// 因此生成的坐标与程序化旋臂点云 (buildGalaxyField) 同源同尺度（银心原点，kpc）。
+// 坐标链路复用 src/coord/galactic.js（唯一真源），与运行时定位完全同源同尺度（银心原点，kpc）。
 //
 // 数据源：astronexus/HYG-Database (CC BY-SA-4.0)
 //   - ra      : 小时制（0–24），需 ×15 转十进制度
@@ -16,43 +15,14 @@ import { readFileSync, writeFileSync } from 'fs';
 import { gunzipSync } from 'zlib';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
+// 坐标换算复用 src/coord/galactic.js（唯一真源），与运行时定位完全同源。
+import { equatorialToGalactic, galacticToScene } from '../src/coord/galactic.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const csvGzPath = resolve(__dirname, '../data/raw/hyg_v37.csv.gz');
 const outPath = resolve(__dirname, '../src/data/hyg-stars.js');
 
-// ---- 与 galaxy.js 完全一致的银道坐标转换（纯函数，无 three 依赖） ----
-const SUN_GALACTIC_POS = [-7.73, 0.02, 2.74]; // 太阳：距银心 8.2 kpc
-
-function equatorialToGalactic(raDeg, decDeg) {
-  const a = raDeg * Math.PI / 180, d = decDeg * Math.PI / 180;
-  const ap = 192.85948 * Math.PI / 180, dp = 27.12825 * Math.PI / 180;
-  const lNCP = 122.93192 * Math.PI / 180;
-  const sinB = Math.sin(d) * Math.sin(dp) + Math.cos(d) * Math.cos(dp) * Math.cos(a - ap);
-  const b = Math.asin(Math.max(-1, Math.min(1, sinB)));
-  const y = Math.cos(d) * Math.sin(a - ap);
-  const x = Math.sin(d) * Math.cos(dp) - Math.cos(d) * Math.sin(dp) * Math.cos(a - ap);
-  const l = ((lNCP - Math.atan2(y, x)) * 180 / Math.PI % 360 + 360) % 360;
-  return [l, b * 180 / Math.PI];
-}
-
-function galacticToScene(l, b, d) {
-  const S = SUN_GALACTIC_POS;
-  const cross = (a, c) => [a[1] * c[2] - a[2] * c[1], a[2] * c[0] - a[0] * c[2], a[0] * c[1] - a[1] * c[0]];
-  const norm = (v) => { const m = Math.hypot(...v); return v.map((x) => x / m); };
-  const X = norm(S.map((v) => -v));
-  const Y = norm(cross([0, 1, 0], X));
-  const Z = norm(cross(X, Y));
-  const L = l * Math.PI / 180, B = b * Math.PI / 180;
-  const u = d * Math.cos(B) * Math.cos(L);
-  const v = d * Math.cos(B) * Math.sin(L);
-  const w = d * Math.sin(B);
-  return [
-    +(S[0] + u * X[0] + v * Y[0] + w * Z[0]).toFixed(9),
-    +(S[1] + u * X[1] + v * Y[1] + w * Z[1]).toFixed(9),
-    +(S[2] + u * X[2] + v * Y[2] + w * Z[2]).toFixed(9),
-  ];
-}
+// 坐标换算复用 src/coord/galactic.js（唯一真源），不再在此复制。
 
 // ---- B−V 颜色指数 → RGB（近似黑体色温） ----
 const BV_STOPS = [

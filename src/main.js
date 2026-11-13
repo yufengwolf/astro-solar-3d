@@ -24,7 +24,8 @@ import {
   resolveCurrentId, parentHref, childHref,
   href as universeHref, isEnglish as isEnglishLang,
 } from './universe.js';
-import { HYG_POS, HYG_COL, HYG_COUNT } from './data/hyg-stars.js';
+import { CATALOGS } from './data/catalogs.js';
+import { SUN_GALACTIC_POS } from './coord/galactic.js';
 import { periodText as periodTextOf } from './orbit-tree.js';
 import { mountUniverseNav } from './nav.js';
 import { resolveBody, bodyHref, carryParams, currentPageFile } from './deeplinks.js';
@@ -259,44 +260,38 @@ function makeDeepSkyShowcase(def) {
   return obj;
 }
 
-// 按配置生成一整片银河系恒星：絮状多旋臂（2 主 + 多次 + 羽状分支）+ 核球 + 银晕。
-// 关键几何：对数螺旋 + 总缠绕 < 1 圈（theta ∈ [0, armThetaMax]，r 随 theta 指数增长），
-// 这样是开放的 S 形旋涡，而不是"绕满一圈 = 同心环蚊香"。
-// 结构贴近真实多旋臂星系：2 条主旋臂（粗亮密、贯穿全盘）+ 若干条「角度/长短错落」的
-// 次旋臂 + 从旋臂上分叉出去的羽状支臂（细碎、粉红 HII 结比例更高）。旋臂一律连续撒点，
-// 不做断节；亮度按 主臂 > 次臂 > 支臂 分级，保证旋臂丰富但主旋臂依然最突出。
-function buildGalaxyField(g, scaleKpc) {
+// 按配置生成银河系「形态辉光（haze）」：真实 4 旋臂密度场 + 本地（猎户）支臂 + 核球 + 指数盘 + 银晕。
+// 这是一层**定性语境辉光**——真实恒星由 HYG / Gaia 等 starfield 目录提供（见 catalogs.js），
+// 本层只勾勒银盘与旋臂的密度走势，不抢真实星点。
+//
+// 几何：对数螺旋臂 r = r0·exp(b·θ)，b = 1/tan(pitch)。相位经调校，使太阳（盘面方位≈160.5°、
+// R≈8.2 kpc）落在两条主旋臂之间的本地（猎户）支臂里，而非叠在主臂亮带上——这修正了原先
+// 把太阳画在「主旋臂 A 中心线」的错误。2 条主旋臂（英仙 / 盾牌-半人马，最亮最密）+
+// 2 条次旋臂（人马 / 矩尺）+ 一条以太阳为锚点的短本地支臂；中心核球 + 指数盘（老星暗背景）+ 银晕。
+function buildMilkyWayHaze(g, scaleKpc) {
   const rng = mulberry32(g.seed ?? 1337);
-  const diskR = g.diskRadiusKpc;
-  const thick = g.thicknessKpc;
-  const thetaMax = g.armThetaMax ?? 4.0;     // 旋臂总缠绕弧度（4.0≈0.64 圈；越大越像同心环）
-  const rMin = g.armRMin ?? 2.0;            // 旋臂起始半径(kpc)，从核球外缘伸出
-  const logSpan = Math.log(diskR / rMin);
-  const interN = g.interArmStars ?? 100;    // 臂间极稀疏暗淡填充，仅补背景、绝不抢旋臂
-  const bulgeN = g.bulgeStars ?? 900;
-  const haloN = g.haloStars ?? 550;
-  // 主旋臂
-  const mainArmCount = g.mainArmCount ?? 2;
-  const mainStars = g.mainArmStars ?? 3800;
-  const mainWidth = g.mainArmWidth ?? 0.10;
-  const mainRadial = g.mainArmRadial ?? 0.45;
-  const mainBright = g.mainArmBrightness ?? 1.55;
-  // 次旋臂（多条、错落）
-  const minorArmCount = g.minorArmCount ?? 6;
-  const minorStars = g.minorArmStars ?? 900;
-  const minorWidth = g.minorArmWidth ?? 0.055;
-  const minorRadial = g.minorArmRadial ?? 0.28;
-  const minorBright = g.minorArmBrightness ?? 0.7;
-  const minorStartMin = g.minorArmStartMin ?? 0.08; // 次臂起始 t 下限（错落，不都从中心长出）
-  const minorStartMax = g.minorArmStartMax ?? 0.40; // 次臂起始 t 上限
-  // 羽状支臂：从某条旋臂的某处分叉出去的短片段（絮状感的关键）
-  const spurCount = g.spurCount ?? 34;
-  const spurStars = g.spurStars ?? 60;
-  const spurBright = g.spurBrightness ?? 0.55;
-  const spurShear = g.spurShear ?? 1.6;      // 分叉相对宿主臂的角向剪切强度
-  const spurLenT = g.spurLenT ?? 0.16;       // 分叉沿 t 的长度
-  const spurWidth = g.spurWidth ?? 0.035;
-  const spurRadial = g.spurRadial ?? 0.2;
+  const diskR = g.diskRadiusKpc ?? 15;
+  const thick = g.thicknessKpc ?? 0.6;
+  const r0 = 2.0;                                   // 旋臂起始半径(kpc)，从核球外缘伸出
+  const rEnd = diskR;                                // 旋臂延伸到银盘边缘
+  const lnSpan = Math.log(rEnd / r0);
+  const pitch = (g.armPitchDeg ?? 12) * DEG;         // 俯仰角：越小越卷；真实银臂约 12°
+  const b = 1 / Math.tan(pitch);                     // 对数螺旋缠绕系数
+  const bulgeN = g.bulgeStars ?? 4000;
+  const haloN = g.haloStars ?? 2500;
+  const diskN = g.diskStars ?? 12000;
+
+  // 4 条旋臂：2 主 + 2 次。相位经调校使太阳（R≈8.2kpc, 方位≈160.5°）位于两主臂之间。
+  // 计算：tangent 臂在 R=8.2 处的方位 = phase + b·ln(8.2/r0) = phase + 20.1°；
+  // 令主臂在 R=8.2 的方位落在 115.5°/295.5°（与太阳各差 45°），反推 phase≈95.4°/275.4°；
+  // 另两条（人马/矩尺次臂）取对角 185.4°/5.4°。
+  const arms = [
+    { phase: 95.4 * DEG,  major: true,  n: g.majorArmStars ?? 9000, bright: 1.45, width: 0.085, radial: 0.5,  hii: 0.22 },
+    { phase: 185.4 * DEG, major: true,  n: g.majorArmStars ?? 9000, bright: 1.45, width: 0.085, radial: 0.5,  hii: 0.22 },
+    { phase: 275.4 * DEG, major: false, n: g.minorArmStars ?? 6000, bright: 0.82, width: 0.06,  radial: 0.34, hii: 0.20 },
+    { phase: 5.4 * DEG,   major: false, n: g.minorArmStars ?? 6000, bright: 0.82, width: 0.06,  radial: 0.34, hii: 0.20 },
+  ];
+
   const pos = [];
   const col = [];
   const c = new THREE.Color();
@@ -305,73 +300,60 @@ function buildGalaxyField(g, scaleKpc) {
     c.setRGB(Math.min(1, cr * bright), Math.min(1, cg * bright), Math.min(1, cb * bright));
     col.push(c.r, c.g, c.b);
   };
-  // 恒星配色：hii 控制粉红 HII 结比例（支臂更高，贴近真实星系的絮状红星点串）。
-  // 各色刻意保留「低次要通道」的饱和度——加法混合会叠白，纯度不够就洗成一片白。
+  // 恒星配色：hii 控制粉红 HII 结比例（旋臂更高，贴近真实星系的絮状红星点串）。
+  // 各色保留「低次要通道」饱和度——加法混合会叠白，纯度不够就洗成一片白。
   const colorFor = (u, hii) => {
-    if (u < hii) return [1.0, 0.16, 0.30, 1.15 + rng() * 0.45];         // HII 粉红星云
-    if (u < 0.62) return [0.16, 0.42, 1.0, 0.95 + rng() * 0.35];        // 年轻蓝星
-    if (u < 0.82) return [0.24, 0.92, 0.78, 0.9 + rng() * 0.3];         // 青白
-    return [1.0, 0.72, 0.34, 0.9 + rng() * 0.3];                        // 黄白(老星)
+    if (u < hii) return [1.0, 0.16, 0.30, 1.15 + rng() * 0.45];   // HII 粉红星云
+    if (u < 0.62) return [0.16, 0.42, 1.0, 0.95 + rng() * 0.35];  // 年轻蓝星
+    if (u < 0.82) return [0.24, 0.92, 0.78, 0.9 + rng() * 0.3];   // 青白
+    return [1.0, 0.72, 0.34, 0.9 + rng() * 0.3];                  // 黄白(老星)
   };
-  const armBases = [];  // 收集所有旋臂的起始角，供羽状支臂挑选宿主
-  // 单条「连续」旋臂：沿对数螺旋连续撒 N 颗星（t 连续、不留节），加角向/径向散射形成平滑旋带
-  const buildArm = (base, n, width, radial, bright, tMin, tMax, hii) => {
-    armBases.push(base);
+
+  // —— 4 条对数螺旋臂 ——
+  for (const arm of arms) {
+    for (let s = 0; s < arm.n; s++) {
+      const t = rng();                              // 沿臂 0(内)→1(外)
+      const r = r0 * Math.exp(t * lnSpan);
+      const theta = arm.phase + b * Math.log(r / r0);
+      const ang = theta + randn(rng) * arm.width;   // 角向散射 = 旋带粗细
+      const rr = r + randn(rng) * arm.radial;        // 径向散射 = 旋带厚度
+      const x = Math.cos(ang) * rr;
+      const z = Math.sin(ang) * rr;
+      const y = randn(rng) * thick * Math.exp(-r / (diskR * 0.5));
+      const [cr, cg, cb, br] = colorFor(rng(), arm.hii);
+      push(x, y, z, cr, cg, cb, br * arm.bright);
+    }
+  }
+  // —— 本地（猎户）支臂：以太阳为锚点的短分支，介于人马臂与英仙臂之间，
+  //     中等密度、偏蓝（年轻恒星形成区），让太阳不坐在完全空荡的臂间 ——
+  {
+    const n = g.localSpurStars ?? 2500;
+    const rSun = Math.hypot(SUN_GALACTIC_POS[0], SUN_GALACTIC_POS[2]);        // ≈8.2
+    const aSun = Math.atan2(SUN_GALACTIC_POS[2], SUN_GALACTIC_POS[0]);        // ≈2.80 rad
     for (let s = 0; s < n; s++) {
-      const t = tMin + rng() * (tMax - tMin);                    // 沿臂的位置 0(核球)→1(外缘)
-      const theta = t * thetaMax;                                // 缠绕角（总 < 1 圈）
-      const r = rMin * Math.exp(t * logSpan) + randn(rng) * radial; // 对数螺旋：半径随角度指数增长
-      const ang = base + theta + randn(rng) * width;             // 角向散射 = 旋带粗细
-      const x = Math.cos(ang) * r;
-      const z = Math.sin(ang) * r;
-      const y = randn(rng) * thick * Math.exp(-r / (diskR * 0.5));
-      const [cr, cg, cb, br] = colorFor(rng(), hii);
-      push(x, y, z, cr, cg, cb, br * bright);
-    }
-  };
-  // 2 条主旋臂：相隔 180°，贯穿全盘，最粗最亮最密
-  for (let a = 0; a < mainArmCount; a++) {
-    buildArm(a * (Math.PI * 2 / mainArmCount), mainStars, mainWidth, mainRadial, mainBright, 0, 1, 0.20);
-  }
-  // 6 条次旋臂：起始角带抖动、起始/结束半径各不相同 → 长短错落的多旋臂，而非等间距整齐长臂
-  for (let a = 0; a < minorArmCount; a++) {
-    const base = (a + 0.3 + rng() * 0.4) * (Math.PI * 2 / minorArmCount);
-    const tMin = minorStartMin + rng() * (minorStartMax - minorStartMin);
-    const tMax = 0.84 + rng() * 0.16;
-    const n = Math.round(minorStars * (0.7 + rng() * 0.6));
-    buildArm(base, n, minorWidth, minorRadial, minorBright * (0.8 + rng() * 0.4), tMin, tMax, 0.22);
-  }
-  // 羽状支臂：从某条旋臂的某点分叉出去，角向逐渐剪切偏离宿主臂 → 细碎的絮状分支
-  for (let s = 0; s < spurCount; s++) {
-    const base = armBases[Math.floor(rng() * armBases.length)] + randn(rng) * 0.12;
-    const t0 = 0.18 + rng() * 0.62;
-    const len = spurLenT * (0.6 + rng() * 0.9);
-    const shear = spurShear * (rng() < 0.5 ? -1 : 1) * (0.5 + rng() * 0.8);
-    const n = Math.round(spurStars * (0.6 + rng() * 0.8));
-    for (let i = 0; i < n; i++) {
-      const t = t0 + (i / n) * len;
-      const theta = t * thetaMax + (t - t0) * shear;            // 相对宿主臂逐渐偏离 = 分叉
-      const r = rMin * Math.exp(t * logSpan) + randn(rng) * spurRadial;
-      const ang = base + theta + randn(rng) * spurWidth;
-      const x = Math.cos(ang) * r;
-      const z = Math.sin(ang) * r;
-      const y = randn(rng) * thick * Math.exp(-r / (diskR * 0.5));
-      const [cr, cg, cb, br] = colorFor(rng(), 0.34);           // 支臂粉红 HII 结更多
-      push(x, y, z, cr, cg, cb, br * spurBright);
+      const t = rng();
+      const r = rSun + (t - 0.3) * 4.0;                  // 从太阳内外延伸一点
+      const ang = aSun + (t - 0.5) * 0.5 + randn(rng) * 0.06;
+      const rr = Math.max(2, r + randn(rng) * 0.3);
+      const x = Math.cos(ang) * rr;
+      const z = Math.sin(ang) * rr;
+      const y = randn(rng) * thick * 0.8 * Math.exp(-r / (diskR * 0.5));
+      const [cr, cg, cb, br] = colorFor(rng(), 0.30);
+      push(x, y, z, cr, cg, cb, br * 0.95);
     }
   }
-  // —— 臂间暗淡填充：极稀疏、暗红老星，仅补一点背景，绝不抢旋臂 ——
-  for (let b = 0; b < interN; b++) {
-    const r = Math.pow(rng(), 0.7) * diskR;
+  // —— 臂间指数盘：老星偏黄红，暗淡背景，仅补银盘「身体」，绝不抢旋臂 ——
+  for (let d = 0; d < diskN; d++) {
+    const r = Math.pow(rng(), 0.6) * diskR;
     const ang = rng() * Math.PI * 2;
-    const rad = r + randn(rng) * 0.5;
+    const rad = r + randn(rng) * 0.6;
     const x = Math.cos(ang) * rad;
     const z = Math.sin(ang) * rad;
     const y = randn(rng) * thick * Math.exp(-r / (diskR * 0.6));
-    push(x, y, z, 0.85, 0.5, 0.38, 0.14 + rng() * 0.1);
+    push(x, y, z, 0.85, 0.55, 0.38, 0.16 + rng() * 0.12);
   }
   // —— 核球（中心密集的暖色椭球）——
-  for (let b = 0; b < bulgeN; b++) {
+  for (let bb = 0; bb < bulgeN; bb++) {
     const r = Math.pow(rng(), 0.5) * 3.0;
     const theta = Math.acos(2 * rng() - 1);
     const phi = 2 * Math.PI * rng();
@@ -390,11 +372,12 @@ function buildGalaxyField(g, scaleKpc) {
     const z = r * Math.sin(theta) * Math.sin(phi);
     push(x, y, z, 0.8, 0.85, 1.0, 0.4 + rng() * 0.3);
   }
+
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   const mat = new THREE.PointsMaterial({
-    size: g.pointSize ?? 0.18,
+    size: g.pointSize ?? 0.2,
     map: discTexture(),
     vertexColors: true,
     transparent: true,
@@ -735,23 +718,27 @@ export function start(system) {
   if (system.galaxy) {
     galaxyField = system.galaxy.kind
       ? buildCosmosField(system.galaxy)
-      : buildGalaxyField(system.galaxy, system.galaxy.scaleKpc ?? 1);
+      : buildMilkyWayHaze(system.galaxy, system.galaxy.scaleKpc ?? 1);
     (galaxyGroup || scene).add(galaxyField);
-    // HYG Database 真实坐标星场：~12 万颗本地恒星，按真实 (ra,dec,dist) → 银道坐标，
-    // 与旋臂点云同源同尺度（银心原点、kpc），作为密集背景星点填满银盘（解决"太空"问题）。
-    if (system.galaxy.hygStarfield && HYG_COUNT > 0) {
-      const hygGeo = new THREE.BufferGeometry();
-      hygGeo.setAttribute('position', new THREE.Float32BufferAttribute(HYG_POS, 3));
-      hygGeo.setAttribute('color', new THREE.Float32BufferAttribute(HYG_COL, 3));
-      const hygMat = new THREE.PointsMaterial({
-        size: 1.1, sizeAttenuation: false, vertexColors: true,
-        transparent: true, opacity: 0.9, depthWrite: false,
-        blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
-      });
-      const hygPoints = new THREE.Points(hygGeo, hygMat);
-      hygPoints.frustumCulled = false;
-      hygPoints.name = 'hygStarfield';
-      (galaxyGroup || scene).add(hygPoints);
+    // 天体目录星场：按 src/data/catalogs.js 注册表加载所有启用的 starfield 目录
+    // （当前 HYG；OpenNGC / Gaia 预留）。坐标全部来自 src/coord/galactic.js 唯一真源，
+    // 与银河系形态辉光同源同尺度（银心原点、kpc），作为真实恒星填满银盘。
+    if (galaxyGroup) {
+      for (const cat of Object.values(CATALOGS)) {
+        if (cat.kind !== 'starfield' || !cat.enabled || !cat.data || cat.data.count <= 0) continue;
+        const catGeo = new THREE.BufferGeometry();
+        catGeo.setAttribute('position', new THREE.Float32BufferAttribute(cat.data.pos, 3));
+        catGeo.setAttribute('color', new THREE.Float32BufferAttribute(cat.data.col, 3));
+        const catMat = new THREE.PointsMaterial({
+          size: 1.1, sizeAttenuation: false, vertexColors: true,
+          transparent: true, opacity: 0.9, depthWrite: false,
+          blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
+        });
+        const catPoints = new THREE.Points(catGeo, catMat);
+        catPoints.frustumCulled = false;
+        catPoints.name = 'catalog:' + (cat.label || 'starfield');
+        galaxyGroup.add(catPoints);
+      }
     }
     // 银盘柔光是盘状星系专属；宇宙网加一层大椭圆辉光只会糊掉黑洞洞的空洞
     if (system.galaxy.glow !== false) {

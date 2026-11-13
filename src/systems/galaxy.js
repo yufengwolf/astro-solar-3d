@@ -1,6 +1,9 @@
 import { starfield } from './shared.js';
 import { POINT_STARS } from '../data/star-points.js';
 import { SYSTEM_BY_BODY } from '../data/stellar-orbits.js';
+// 坐标换算唯一真源（见 src/coord/galactic.js）；再导出 LY_PER_KPC / KPC_PER_LY 以保持对外 API 稳定。
+import { LY_PER_KPC, KPC_PER_LY, SUN_GALACTIC_POS, equatorialToGalactic, galacticToScene } from '../coord/galactic.js';
+export { LY_PER_KPC, KPC_PER_LY };
 
 /**
  * 银河系页 → AU 级恒星系统页的下钻入口。
@@ -24,7 +27,7 @@ function withStellarDrilldown(def) {
 // 1 场景单位 = 1 kpc = 3261.56 光年。每档取景半径严格 10× 递减，
 // 第 0 档 radiusKpc=17 与既有 extent 一致（画面直径 ≈ 11 万光年，正好整个银盘）。
 // 标签里的「光年」是画面直径，与 radiusKpc 自洽：17 kpc×2 ≈ 11 万 ly，1.7 kpc×2 ≈ 1.1 万 ly…
-export const LY_PER_KPC = 3261.56;
+// （LY_PER_KPC / KPC_PER_LY 定义见 src/coord/galactic.js，本文件仅再导出以保持对外 API 稳定）
 export const SCALE_TIERS = [
   // short 是比例尺按钮上的文字：中文模式直接显示「光年」，不再用看不懂的 ly。
   // 英文模式的短标签由 i18n.tierShort() 按 spanLy 生成。
@@ -44,20 +47,7 @@ export function tierForDistance(dLy) {
   return 0;
 }
 
-// J2000 赤道坐标 → 银道坐标 (l, b)。标准球面三角，常数取 IAU 1958 银道极：
-// 北银极 RA=192.85948°, Dec=+27.12825°，银心方向 l_NCP=122.93192°。
-// 自检：Sgr A* (266.4168°, −29.0078°) → l=359.944°, b=−0.046°；北银极 → b=90°。
-function equatorialToGalactic(raDeg, decDeg) {
-  const a = raDeg * Math.PI / 180, d = decDeg * Math.PI / 180;
-  const ap = 192.85948 * Math.PI / 180, dp = 27.12825 * Math.PI / 180;
-  const lNCP = 122.93192 * Math.PI / 180;
-  const sinB = Math.sin(d) * Math.sin(dp) + Math.cos(d) * Math.cos(dp) * Math.cos(a - ap);
-  const b = Math.asin(Math.max(-1, Math.min(1, sinB)));
-  const y = Math.cos(d) * Math.sin(a - ap);
-  const x = Math.sin(d) * Math.cos(dp) - Math.cos(d) * Math.sin(dp) * Math.cos(a - ap);
-  const l = ((lNCP - Math.atan2(y, x)) * 180 / Math.PI % 360 + 360) % 360;
-  return [l, b * 180 / Math.PI];
-}
+// equatorialToGalactic / galacticToScene 已抽到 src/coord/galactic.js（唯一真源）。
 
 // ---------- 邻近恒星 / 星团 / 系外行星系统（比例尺小档才出现） ----------
 // 距离取 Hipparcos / Gaia / RECONS 与 Messier 星表主流值；RA/Dec 为 J2000，
@@ -129,29 +119,7 @@ const NEARBY_STARS = [
 //  · 天鹅座 X-1：ApJ 965,172 (2024)（l=71.33, b=3.07, d=2.22）
 //  · 球状星团 ωCen / 47Tuc：arXiv:2306.01765 表1（Harris 星表）；M22：GGCs / A&A (2011)
 //  · 未采用的：环状星云 M57、马头星云 IC434 等查不到可靠 l/b/d，按约定不加
-const SUN_GALACTIC_POS = [-7.73, 0.02, 2.74]; // 太阳：距银心 8.2 kpc，位于主旋臂
-
-// 银道坐标 → 场景坐标。基向量：l=0 指向银心，+Y 为北银极，l=90 沿盘面与之正交。
-// 自洽性检验：l=0,b=0,d=8.2 应回到银心 (0,0,0)。
-function galacticToScene(l, b, d) {
-  const S = SUN_GALACTIC_POS;
-  const cross = (a, c) => [a[1] * c[2] - a[2] * c[1], a[2] * c[0] - a[0] * c[2], a[0] * c[1] - a[1] * c[0]];
-  const norm = (v) => { const m = Math.hypot(...v); return v.map((x) => x / m); };
-  const X = norm(S.map((v) => -v));           // l=0：太阳 → 银心
-  const Y = norm(cross([0, 1, 0], X));        // l=90
-  const Z = norm(cross(X, Y));                // b=+90：北银极
-  const L = l * Math.PI / 180, B = b * Math.PI / 180;
-  const u = d * Math.cos(B) * Math.cos(L);
-  const v = d * Math.cos(B) * Math.sin(L);
-  const w = d * Math.sin(B);
-  return [
-    // 精度必须到 1e-9 kpc（≈0.003 光年）：原先的 toFixed(3) 是 3.26 光年，
-    // 会把 4~10 光年的邻近恒星全部舍入成「和太阳同一个点」，比例尺小档就失效了。
-    +(S[0] + u * X[0] + v * Y[0] + w * Z[0]).toFixed(9),
-    +(S[1] + u * X[1] + v * Y[1] + w * Z[1]).toFixed(9),
-    +(S[2] + u * X[2] + v * Y[2] + w * Z[2]).toFixed(9),
-  ];
-}
+// SUN_GALACTIC_POS / galacticToScene 已抽到 src/coord/galactic.js（唯一真源）。
 
 // kind 决定放大后的展示形态：星云/遗迹→生成图片精灵；球状星团→点云球；黑洞→暗球+吸积环
 const DEEP_SKY = [
@@ -364,14 +332,17 @@ const pointBodies = POINT_STARS.map((o) => {
 });
 
 /**
- * 银河系（定性示意，非物理精确）。
+ * 银河系（形态为定性语境辉光，恒星为真）。
  *
  * 设计取舍（与"太阳系缩放"同一思路）：
  * - 比例尺：1 场景单位 = 1 千秒差距(kpc)。银盘半径约 15 kpc，太阳距银心约 8.2 kpc。
- * - 旋臂用对数螺旋近似（总缠绕 < 1 圈）：2 条主旋臂 + 6 条错落的次旋臂 + 羽状支臂，
- *   构成絮状多旋臂（贴近真实星系照片，而非 4 条等间距整齐长臂）；
- *   恒星是一团 THREE.Points 点云（自带柔光贴图 + 加法混合），
- *   SagA* 在中心作视觉锚点，太阳位于一条主旋臂上，是一颗带「下钻」入口的恒星。
+ * - 形态辉光（buildMilkyWayHaze）：真实 4 旋臂对数螺旋密度场——2 条主旋臂
+ *   （英仙 / 盾牌-半人马）+ 2 条次旋臂（人马 / 矩尺）+ 以太阳为锚点的本地（猎户）支臂，
+ *   中心核球 + 指数盘 + 稀疏银晕。相位经调校，太阳位于两主臂之间的本地支臂，
+ *   而非叠在某条主臂亮带上（这是早期版本的几何错误，已修正）。
+ * - 真实恒星来自目录（src/data/catalogs.js），目前接入 HYG Database（~12 万颗本地恒星），
+ *   坐标全部走 src/coord/galactic.js 唯一真源；OpenNGC（深空）/ Gaia（全银盘）预留。
+ *   形态辉光只是"语境层"，真实星点才是可缩放探索的内容主体。
  * - 不做"连续缩放穿出太阳系"：float32 跨 13 个数量级精度不可行，而且会卡死。
  *   改用页面切换作为显式 LOD 边界；上下级边界全部由 src/universe.js 注册表给出：
  *     · 太阳系总览缩到最外圈再往外滚 / 点顶部「上一级」 → 本页
@@ -390,40 +361,24 @@ export default {
   sunPos: SUN_GALACTIC_POS,// 小档的观察焦点：太阳（大档焦点仍是银心原点）
   timeScale: 0,            // 星系自转走 galaxyGroup 专用慢转，不依赖 timeScale
   galaxy: {
-    hygStarfield: true,       // 接入 HYG Database 真实坐标星场（~12 万颗本地恒星，填满银盘）
     scaleKpc: 1,
     diskRadiusKpc: 15,
     thicknessKpc: 0.6,
-    // 对数螺旋（关键）：总缠绕 < 1 圈 → 开放的 S 形旋涡，而非"绕满一圈=同心环蚊香"
-    armThetaMax: 4.0,      // 旋臂总缠绕弧度（4.0≈0.64 圈；调大更卷、>5 会开始像蚊香）
-    armRMin: 2.0,          // 旋臂起始半径(kpc)，从核球外缘伸出
-    // —— 2 条主旋臂：贯穿全盘、最粗最亮最密 ——
-    mainArmCount: 2,
-    mainArmStars: 3800,    // 主旋臂星数（密集 → 在加法混合下叠出明亮辉光带）
-    mainArmWidth: 0.10,    // 主旋臂角向半宽(rad)，收得紧所以是一条清晰的亮带
-    mainArmRadial: 0.45,   // 主旋臂径向厚度(kpc)
-    mainArmBrightness: 1.35,   // 主旋臂亮度系数（最亮，但不过曝，留住蓝/粉颜色）
-    // —— 6 条次旋臂：起始角/长短错落，形成"旋臂挺多"的丰富感但不整齐 ——
-    minorArmCount: 6,
-    minorArmStars: 1200,   // 每条次臂星数（提密，让多条臂都看得清）
-    minorArmWidth: 0.055,  // 次旋臂更窄
-    minorArmRadial: 0.28,
-    minorArmBrightness: 0.82,  // 暗于主臂，但足够可见（"旋臂挺多"的关键）
-    minorArmStartMin: 0.06,    // 次臂起始 t 下限（错落，不都从中心长出）
-    minorArmStartMax: 0.36,    // 次臂起始 t 上限
-    // —— 羽状支臂：从旋臂分叉出的细碎短片段，絮状感的关键 ——
-    spurCount: 46,         // 分叉数量（更多细碎分支）
-    spurStars: 75,         // 每条分叉星数
-    spurBrightness: 0.7,   // 提亮，让分叉可辨认但不抢主臂
-    spurShear: 1.9,        // 分叉相对宿主臂的角向剪切强度（越大分叉越张开）
-    spurLenT: 0.22,        // 分叉沿 t 的长度（加长，羽状感更明显）
-    spurWidth: 0.035,
-    spurRadial: 0.2,
+    // 真实银河系旋臂几何（对数螺旋 r = r0·exp(b·θ)，b = 1/tan(pitch)）。
+    // 相位经调校，使太阳（盘面方位≈160.5°、R≈8.2 kpc）落在两条主旋臂之间的
+    // 本地（猎户）支臂，而非叠在主臂亮带上（原先"主旋臂 A 中心线"的摆法是错的）。
+    // 2 条主旋臂（英仙 / 盾牌-半人马，最亮最密）+ 2 条次旋臂（人马 / 矩尺），
+    // 外加一条本地支臂（猎户臂）以太阳为锚点短延伸；中央核球 + 指数盘 + 稀疏银晕。
+    // 真实恒星由 HYG / Gaia 等 starfield 目录（见 src/data/catalogs.js）提供。
+    armPitchDeg: 12,        // 旋臂俯仰角（越小越卷）；真实银臂约 12°
+    majorArmStars: 9000,    // 每条主旋臂星数（密集 → 加法混合下叠出明亮辉光带）
+    minorArmStars: 6000,    // 每条次旋臂星数
+    localSpurStars: 2500,   // 本地（猎户）支臂星数
+    diskStars: 12000,       // 臂间指数盘（老星，暗淡背景）
+    bulgeStars: 4000,       // 核球
+    haloStars: 2500,        // 银晕
     pointSize: 0.2,
-    rotateSpeed: 0.006,    // 银盘整体慢转(弧度/秒)；跟随镜头下小档也保留慢转
-    interArmStars: 100,    // 臂间几乎掏空，只留极暗背景
-    bulgeStars: 900,
-    haloStars: 550,
+    rotateSpeed: 0.006,     // 银盘整体慢转(弧度/秒)；跟随镜头下小档也保留慢转
     seed: 20261107,
   },
   // 仅保留"属于银河系"的卫星星系（大麦/小麦哲伦云），作为远处模糊的小点；
@@ -465,7 +420,7 @@ export default {
       // 与其它银盘天体完全同尺寸：从银河系尺度看太阳就是普通一颗恒星，
       // 不再特殊放大（小档里靠名字标签辨认，而不是靠画得更大）。
       fixedSize: 0.07,
-      galaxyPos: [-7.73, 0.02, 2.74], // 距银心 8.2 kpc，落在「主旋臂 A」中心线上（非次臂/支臂）
+      galaxyPos: [-7.73, 0.02, 2.74], // 距银心 8.2 kpc，位于本地（猎户）支臂——介于英仙臂与人马臂之间（非主旋臂亮带）
       dLy: 0,              // 太阳 = 距离零点，所有档位都保留（小档的观察焦点）
       tier: SCALE_TIERS.length - 1,
       color: 0xfff0c0,
