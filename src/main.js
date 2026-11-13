@@ -25,6 +25,7 @@ import {
   href as universeHref, isEnglish as isEnglishLang,
 } from './universe.js';
 import { CATALOGS } from './data/catalogs.js';
+import { OPENNGC_META } from './data/openngc.js';
 import { SUN_GALACTIC_POS } from './coord/galactic.js';
 import { periodText as periodTextOf } from './orbit-tree.js';
 import { mountUniverseNav } from './nav.js';
@@ -746,6 +747,8 @@ export function start(system) {
 
   // 背景点云：银河系用专用旋臂生成器；上级层级（星系群 / 超星系团 / 宇宙网）
   // 用通用的纤维－结点生成器，并把可点击锚点作为亮结点喂进去。
+  // 深空点云（OpenNGC 等）：渲染后留作可点击拾取目标；refreshTargets 也需引用，故提到外层作用域
+  let deepSkyCloud = null;
   if (system.galaxy) {
     galaxyField = system.galaxy.kind
       ? buildCosmosField(system.galaxy)
@@ -754,23 +757,42 @@ export function start(system) {
     // 天体目录星场：按 src/data/catalogs.js 注册表加载所有启用的 starfield 目录
     // （当前 HYG；OpenNGC / Gaia 预留）。坐标全部来自 src/coord/galactic.js 唯一真源，
     // 与银河系形态辉光同源同尺度（银心原点、kpc），作为真实恒星填满银盘。
+    // 深空点云（OpenNGC 等）：渲染后留作可点击拾取目标（deepSkyCloud 在外层作用域声明）
     if (galaxyGroup) {
       for (const cat of Object.values(CATALOGS)) {
-        if (cat.kind !== 'starfield' || !cat.enabled || !cat.data || cat.data.count <= 0) continue;
+        if (!cat.enabled || !cat.data || cat.data.count <= 0) continue;
         const catGeo = new THREE.BufferGeometry();
         catGeo.setAttribute('position', new THREE.Float32BufferAttribute(cat.data.pos, 3));
-        // 本地邻域（太阳附近）HYG/Gaia 点最密，叠加混合易过曝：按到太阳距离平滑压暗。
-        const dimCol = dimStarfieldNearSun(cat.data.col, cat.data.pos);
-        catGeo.setAttribute('color', new THREE.Float32BufferAttribute(dimCol, 3));
-        const catMat = new THREE.PointsMaterial({
-          size: 0.8, sizeAttenuation: false, vertexColors: true,
-          transparent: true, opacity: 0.8, depthWrite: false,
-          blending: THREE.NormalBlending, toneMapped: false, fog: false,
-        });
-        const catPoints = new THREE.Points(catGeo, catMat);
-        catPoints.frustumCulled = false;
-        catPoints.name = 'catalog:' + (cat.label || 'starfield');
-        galaxyGroup.add(catPoints);
+        if (cat.kind === 'starfield') {
+          // 本地邻域（太阳附近）HYG/Gaia 点最密，叠加混合易过曝：按到太阳距离平滑压暗。
+          const dimCol = dimStarfieldNearSun(cat.data.col, cat.data.pos);
+          catGeo.setAttribute('color', new THREE.Float32BufferAttribute(dimCol, 3));
+          const catMat = new THREE.PointsMaterial({
+            size: 0.8, sizeAttenuation: false, vertexColors: true,
+            transparent: true, opacity: 0.8, depthWrite: false,
+            blending: THREE.NormalBlending, toneMapped: false, fog: false,
+          });
+          const catPoints = new THREE.Points(catGeo, catMat);
+          catPoints.frustumCulled = false;
+          catPoints.name = 'catalog:' + (cat.label || 'starfield');
+          galaxyGroup.add(catPoints);
+        } else if (cat.kind === 'deepsky') {
+          // 深空天体（星云/星团/星系）：按类型着色的点云，环绕太阳按壳层摆放。
+          // 不做逐体网格（~1.4 万颗会爆 draw call），点云 + 射线按索引命中弹信息卡。
+          catGeo.setAttribute('color', new THREE.Float32BufferAttribute(cat.data.col, 3));
+          const catMat = new THREE.PointsMaterial({
+            size: 1.4, sizeAttenuation: false, vertexColors: true,
+            transparent: true, opacity: 0.92, depthWrite: false,
+            blending: THREE.NormalBlending, toneMapped: false, fog: false,
+          });
+          const catPoints = new THREE.Points(catGeo, catMat);
+          catPoints.frustumCulled = false;
+          catPoints.name = 'catalog:' + (cat.label || 'deepsky');
+          catPoints.userData.isDeepSky = true;
+          catPoints.userData.catalog = cat;
+          galaxyGroup.add(catPoints);
+          deepSkyCloud = catPoints;
+        }
       }
     }
     // 银盘柔光是盘状星系专属；宇宙网加一层大椭圆辉光只会糊掉黑洞洞的空洞
@@ -957,6 +979,8 @@ export function start(system) {
 
   // ---------- 拾取与信息卡 ----------
   const raycaster = new THREE.Raycaster();
+  // 深空点云是点云，需放宽 Points 射线阈值（场景单位=kpc，0.6 即约 0.6 kpc 内可命中）
+  raycaster.params.Points.threshold = 0.6;
   const mouse = new THREE.Vector2();
   let raycastTargets = [];
   function refreshTargets() {
@@ -976,6 +1000,7 @@ export function start(system) {
       if (n.model) n.model.traverse((c) => { if (c.isMesh) raycastTargets.push(c); });
     }
     if (sunMesh) raycastTargets.push(sunMesh);
+    if (deepSkyCloud) raycastTargets.push(deepSkyCloud); // 深空点云：射线按 point index 命中
   }
   refreshTargets();
   setTimeout(refreshTargets, 1500); // glb 异步加载完成后再刷新
@@ -1959,6 +1984,58 @@ export function start(system) {
     box.style.display = 'block';
     infoDismissed = false;   // 用户选了新天体，允许镜头落地时重新展开信息卡
   }
+
+  // ---------- OpenNGC 深空点云点击：按 point index 取元数据弹信息卡 ----------
+  // 深空天体不做逐体网格（~1.4 万颗），只渲染成点云；射线命中后用 hits[0].index
+  // 定位到具体天体，构造一个轻量 def 直接喂给 showInfo（仅展示，不飞行/不切档）。
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function raToHMS(raDeg) {
+    let h = raDeg / 15;
+    const hh = Math.floor(h); const m = Math.floor((h - hh) * 60); const s = ((h - hh) * 60 - m) * 60;
+    return `${pad2(hh)}:${pad2(m)}:${s.toFixed(1)}`;
+  }
+  function decToDMS(decDeg) {
+    const sgn = decDeg < 0 ? '-' : '+'; const a = Math.abs(decDeg);
+    const d = Math.floor(a); const m = Math.floor((a - d) * 60); const s = ((a - d) * 60 - m) * 60;
+    return `${sgn}${pad2(d)}:${pad2(m)}:${s.toFixed(1)}`;
+  }
+  function makeOpenNgcDef(i) {
+    const meta = OPENNGC_META;
+    if (!meta || i < 0 || i >= meta.ids.length) return null;
+    const id = meta.ids[i];
+    const cat = meta.cat ? meta.cat[i] : 10;
+    const catZh = (meta.catZh && meta.catZh[cat]) || '其他';
+    const mag = meta.mag ? meta.mag[i] : -99;
+    const dist = meta.dist ? meta.dist[i] : -1;
+    const ra = meta.ra ? meta.ra[i] : NaN;
+    const dec = meta.dec ? meta.dec[i] : NaN;
+    const l = meta.lb ? meta.lb[i * 2] : NaN;
+    const b = meta.lb ? meta.lb[i * 2 + 1] : NaN;
+    const common = meta.common ? meta.common[i] : '';
+    const info = {};
+    info['类型'] = catZh;
+    info['视星等'] = isFinite(mag) && mag > -90 ? mag.toFixed(1) : '—';
+    info['赤经'] = isFinite(ra) ? raToHMS(ra) : '—';
+    info['赤纬'] = isFinite(dec) ? decToDMS(dec) : '—';
+    info['银道坐标'] = (isFinite(l) && isFinite(b))
+      ? `银经 = ${l.toFixed(1)}°，银纬 = ${b.toFixed(1)}°` : '—';
+    if (dist > 0) {
+      const ly = dist * 3.26156e6; // Mpc → 光年
+      const distFmt = dist < 0.01 ? dist.toFixed(4) : dist.toFixed(2);
+      info['距离'] = `~ ${Math.round(ly).toLocaleString('en-US')} ly (${distFmt} Mpc)`;
+    } else {
+      info['距离'] = 'n/a';
+    }
+    if (common) info['别名'] = common;
+    info['简介'] = `OpenNGC 收录的深空天体（${id}）。方向为真实赤经赤纬换算的银道坐标；距离目录未逐体给出，按壳层近似摆放，仅供方向参考。`;
+    return { id: 'openngc:' + id, name: common || id, nameEn: id, info };
+  }
+  function handleDeepSkyPick(i) {
+    const def = makeOpenNgcDef(i);
+    if (!def) return;
+    selected = def;
+    showInfo(def);
+  }
   // 关闭信息卡 = 纯 UI 收起，绝不动 3D 状态。
   // 旧实现在这里调用 setActiveShowcase(null) + stopFollow()，结果用户只是想
   // 收起一张卡片，镜头却从恒星 9R 特写瞬间跳回 10 万光年全景（实测跟随、
@@ -2028,6 +2105,12 @@ export function start(system) {
     const hits = raycaster.intersectObjects(raycastTargets, false);
     const id = hits.length ? hits[0].object.userData.bodyId : null;
     if (id) { blankDown = null; selectBody(id); return; }
+    // 深空点云（OpenNGC）：命中时用 point index 取元数据，直接弹信息卡（不飞行、不切档）
+    if (hits.length && hits[0].object.userData.isDeepSky && hits[0].index != null) {
+      blankDown = null;
+      handleDeepSkyPick(hits[0].index);
+      return;
+    }
     blankDown = { x: e.clientX, y: e.clientY };
   });
   window.addEventListener('mouseup', (e) => {
@@ -2604,6 +2687,14 @@ export function start(system) {
               opacity: p.sphere.material.opacity,
             })),
         };
+      },
+      // OpenNGC 深空点云（仅调试）：暴露 pick(i) 让 CDP 直接验证「点中深空点 → 信息卡」链路
+      openngc: {
+        count: OPENNGC_META.ids.length,
+        catZh: OPENNGC_META.catZh,
+        meta: OPENNGC_META,
+        makeDef: makeOpenNgcDef,
+        pick: handleDeepSkyPick,
       },
     };
   }

@@ -296,6 +296,7 @@ const VIEW_EN = {
 };
 const INFO_KEY_EN = {
   '类型': 'Type', '距离': 'Distance', '银道坐标': 'Galactic coordinates', '简介': 'Notes',
+  '赤经': 'Right ascension', '赤纬': 'Declination', '别名': 'Alias',
   '平均半径': 'Mean radius', '核半径': 'Nucleus radius', '直径': 'Diameter',
   '轨道半长轴': 'Semi-major axis', '偏心率': 'Eccentricity', '轨道倾角': 'Inclination',
   '公转周期': 'Orbital period', '自转周期': 'Rotation period', '质量': 'Mass',

@@ -9,6 +9,7 @@
 // 当前：HYG 已接入；OpenNGC（深空天体）与 Gaia（全银盘恒星）预留位，待接入。
 
 import { HYG_POS, HYG_COL, HYG_COUNT } from './hyg-stars.js';
+import { OPENNGC_POS, OPENNGC_COL, OPENNGC_COUNT, OPENNGC_META } from './openngc.js';
 
 export const CATALOGS = {
   hyg: {
@@ -18,12 +19,20 @@ export const CATALOGS = {
     note: '119,627 条恒星筛选至 109,400 颗（距银心 ≤15 kpc），真实坐标填满银盘本地恒星区',
     data: { pos: HYG_POS, col: HYG_COL, count: HYG_COUNT },
   },
-  // 预留：深空天体（星云 / 星团 / 星系），待接入 OpenNGC
+  // 深空天体（星云 / 星团 / 星系）：OpenNGC（~14,000 个 NGC/IC/其他）。
+  // 方向用真实银道坐标，半径用壳层摆放（星系按红移/视向速度推距离对数映射到 3–16 kpc 壳层，
+  // 无距离按类型分壳层）。渲染见 main.js 的目录循环 deepsky 分支，点击可弹信息卡。
   openngc: {
     kind: 'deepsky',
-    enabled: false,
-    label: 'OpenNGC (planned)',
-    note: '~13,957 个 NGC/IC 深空天体，补「外层系统」',
+    enabled: true,
+    label: 'OpenNGC (14,027 objects)',
+    note: '~14,027 个 NGC/IC/其他深空天体，真实方向 + 壳层摆放，按类型着色',
+    data: {
+      pos: OPENNGC_POS,
+      col: OPENNGC_COL,
+      count: OPENNGC_COUNT,
+      meta: OPENNGC_META,
+    },
   },
   // 预留：全银盘恒星（十亿级），先占位
   gaia: {

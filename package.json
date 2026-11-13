@@ -41,6 +41,8 @@
     "check:backdrop": "node scripts/check-backdrop.mjs",
     "build:hyg": "node scripts/build-hyg.mjs",
     "check:hyg": "node scripts/check-hyg.mjs",
+    "build:openngc": "node scripts/build-openngc.mjs",
+    "check:openngc": "node scripts/check-openngc.mjs",
     "sync": "node scripts/sync.mjs"
   },
   "devDependencies": {
