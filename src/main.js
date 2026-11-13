@@ -378,27 +378,35 @@ function buildMilkyWayHaze(g, scaleKpc) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   const mat = new THREE.PointsMaterial({
-    size: g.pointSize ?? 0.2,
+    size: g.pointSize ?? 1.3,
     map: discTexture(),
     vertexColors: true,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    sizeAttenuation: true,
+    sizeAttenuation: false,   // 固定屏幕像素大小：总览档（相机离盘面 ~17kpc）也能看清旋臂，
     toneMapped: false,   // 关掉 ACES 色调映射，保留旋臂的蓝/粉/青/黄真实色彩，不被洗成一片白
   });
   return new THREE.Points(geo, mat);
 }
 
-// 银盘柔光：一层极淡的加法辉光，给星系一个发光的"身体"，提升整体观感
+// 银盘柔光：一层加法辉光盘 + 中心核球辉光，给星系一个发光的"身体"，提升整体观感。
+// 总览档让「银河系」一眼可辨（盘 + 亮核），分类目录点云（HYG/OpenNGC）按档淡出后不会盖过结构。
 function makeGalaxyGlow(diskR) {
-  const mat = new THREE.SpriteMaterial({
-    map: discTexture(), color: 0xffe7c2, transparent: true,
-    opacity: 0.08, depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const s = new THREE.Sprite(mat);
-  s.scale.set(diskR * 2.8, diskR * 0.7, 1);
-  return s;
+  const group = new THREE.Group();
+  const disk = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: discTexture(), color: 0xffe2bd, transparent: true,
+    opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  disk.scale.set(diskR * 3.0, diskR * 0.85, 1);
+  group.add(disk);
+  const bulge = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: discTexture(), color: 0xfff1da, transparent: true,
+    opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  bulge.scale.set(diskR * 1.1, diskR * 1.1, 1);
+  group.add(bulge);
+  return group;
 }
 
 // 远景星系：只是远处一个模糊的小点（椭圆辉光），无细节、不可交互
@@ -749,6 +757,7 @@ export function start(system) {
   // 用通用的纤维－结点生成器，并把可点击锚点作为亮结点喂进去。
   // 深空点云（OpenNGC 等）：渲染后留作可点击拾取目标；refreshTargets 也需引用，故提到外层作用域
   let deepSkyCloud = null;
+  let catalogClouds = [];
   if (system.galaxy) {
     galaxyField = system.galaxy.kind
       ? buildCosmosField(system.galaxy)
@@ -779,6 +788,8 @@ export function start(system) {
           const catPoints = new THREE.Points(catGeo, catMat);
           catPoints.frustumCulled = false;
           catPoints.name = 'catalog:' + (cat.label || 'starfield');
+          catPoints.userData.baseOpacity = 0.8;
+          catalogClouds.push(catPoints);
           galaxyGroup.add(catPoints);
         } else if (cat.kind === 'deepsky') {
           // 深空天体（星云/星团/星系）：按类型着色的点云，环绕太阳按壳层摆放。
@@ -794,6 +805,8 @@ export function start(system) {
           catPoints.name = 'catalog:' + (cat.label || 'deepsky');
           catPoints.userData.isDeepSky = true;
           catPoints.userData.catalog = cat;
+          catPoints.userData.baseOpacity = 0.92;
+          catalogClouds.push(catPoints);
           galaxyGroup.add(catPoints);
           deepSkyCloud = catPoints;
         }
@@ -1135,6 +1148,21 @@ export function start(system) {
     }
   }
 
+  // 分类目录点云（HYG/OpenNGC）本质是「以太阳为原点的邻域星表」，若在全景档全亮，
+  // 会盖过银河系结构、让本页看起来像「太阳系周边」而非「银河系」。这里按比例尺分档
+  // 淡出：总览档(0)完全隐藏，越放大到本地邻域档位越清晰——既让本页一眼是银河，
+  // 又保留真实星表作为缩放下钻细节。
+  function updateCatalogCloudFade(i) {
+    if (!catalogClouds.length) return;
+    const FADE = [0.0, 0.3, 0.55, 0.75, 0.9, 1.0];
+    const f = FADE[Math.min(i, FADE.length - 1)] ?? 1.0;
+    for (const c of catalogClouds) {
+      const base = c.userData.baseOpacity ?? 0.85;
+      c.material.opacity = base * f;
+      c.visible = f > 0.01;
+    }
+  }
+
   function applyTier(i, opts = {}) {
     if (!TIERS) return;
     i = Math.max(0, Math.min(TIERS.length - 1, i));
@@ -1188,6 +1216,7 @@ export function start(system) {
 
     applyTierScale(i);
     updateTierVisibility(i);
+    updateCatalogCloudFade(i);
     updateScaleBarUI(i);
 
     // 背景层永不隐藏：小档把银盘点云切成固定 1.6px 的屏幕空间星点，
