@@ -480,6 +480,25 @@ function applyExaggerationToNodes(nodes, factor) {
  *   sun:{texture,intensity}, bodies:[...], asteroids:[...]
  * }
  */
+
+// HYG / Gaia 等星表在本地邻域（太阳附近）完整度最高、点最密，叠加混合后会在
+// 太阳周围糊出一团过曝亮斑。按各点到太阳场景坐标的距离(kpc)做平滑亮度衰减：
+// 近处大幅压暗、远处保持原样。只改亮度不改位置，不影响任何几何 / 定位 / 深链。
+function dimStarfieldNearSun(col, pos) {
+  const sx = SUN_GALACTIC_POS[0], sy = SUN_GALACTIC_POS[1], sz = SUN_GALACTIC_POS[2];
+  const NEAR = 1.0, FAR = 5.0, MIN = 0.4; // kpc；NEAR 内压到 MIN，FAR 外不衰减
+  const out = new Float32Array(col.length);
+  for (let i = 0; i < col.length; i += 3) {
+    const dx = pos[i] - sx, dy = pos[i + 1] - sy, dz = pos[i + 2] - sz;
+    const r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    let w = 1;
+    if (r < NEAR) w = MIN;
+    else if (r < FAR) w = MIN + (1 - MIN) * ((r - NEAR) / (FAR - NEAR));
+    out[i] = col[i] * w; out[i + 1] = col[i + 1] * w; out[i + 2] = col[i + 2] * w;
+  }
+  return out;
+}
+
 export function start(system) {
   // 当前页面在宇宙层级树里的位置。导航条、滚轮「上浮 / 下钻」边界全部从这里取，
   // 不再依赖每个 system 各自硬编码的 parentSystem / zoomOutTo / childSystem。
@@ -728,11 +747,13 @@ export function start(system) {
         if (cat.kind !== 'starfield' || !cat.enabled || !cat.data || cat.data.count <= 0) continue;
         const catGeo = new THREE.BufferGeometry();
         catGeo.setAttribute('position', new THREE.Float32BufferAttribute(cat.data.pos, 3));
-        catGeo.setAttribute('color', new THREE.Float32BufferAttribute(cat.data.col, 3));
+        // 本地邻域（太阳附近）HYG/Gaia 点最密，叠加混合易过曝：按到太阳距离平滑压暗。
+        const dimCol = dimStarfieldNearSun(cat.data.col, cat.data.pos);
+        catGeo.setAttribute('color', new THREE.Float32BufferAttribute(dimCol, 3));
         const catMat = new THREE.PointsMaterial({
-          size: 1.1, sizeAttenuation: false, vertexColors: true,
-          transparent: true, opacity: 0.9, depthWrite: false,
-          blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
+          size: 0.8, sizeAttenuation: false, vertexColors: true,
+          transparent: true, opacity: 0.8, depthWrite: false,
+          blending: THREE.NormalBlending, toneMapped: false, fog: false,
         });
         const catPoints = new THREE.Points(catGeo, catMat);
         catPoints.frustumCulled = false;
