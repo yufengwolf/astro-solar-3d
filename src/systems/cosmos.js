@@ -27,6 +27,7 @@ import {
 import { hasPortrait, portraitOf } from '../portraits.js';
 import { isStellarSystemNode } from '../data/stellar-orbits.js';
 import { makeStellarSystem } from '../stellar-system.js';
+import { LG_GALAXIES } from '../data/galaxies.js';
 
 const fmt = (v) => String(Math.round(v * 100) / 100);
 
@@ -142,6 +143,40 @@ function anchorDef(m, node, navGroup, pos, isFocus, navMode = false) {
 }
 
 /**
+ * 把本星系群星表里「没有独立页面」的成员（绝大多数为矮星系）包成一个
+ * 注册表节点形状的虚拟对象，供 anchorDef 直接消费：有坐标、有名字、有资料，
+ * 但没有 url —— href() 返回 null，信息卡只展示资料、不出现「进入」按钮。
+ */
+function makeLocalGroupMember(g) {
+  return {
+    id: g.id, zh: g.zh, en: g.en,
+    kind: 'galaxy', detail: 'planned',
+    spanLy: g.spanLy, dLy: g.dLy,
+    accent: g.accent, color: g.color,
+    briefZh: g.briefZh, briefEn: g.briefEn,
+  };
+}
+
+/**
+ * 本星系群页成员：来自真实坐标星表（~90 个成员），不再使用手写定性 pos。
+ * 与注册表对应的 5 个主星系（银河系/仙女座/三角座/大小麦哲伦云）走真实节点
+ * 以保留独立页面与深链；其余矮星系走虚拟节点。
+ */
+function localGroupMembers(node, kids, focus) {
+  const major = new Map(kids.map((k) => [k.id, k]));
+  const out = [];
+  for (const g of LG_GALAXIES) {
+    const reg = major.get(g.id);
+    if (reg) {
+      out.push({ node: reg, group: '下级层级', pos: g.pos.slice(0, 3), focus: g.id === focus?.id });
+    } else {
+      out.push({ node: makeLocalGroupMember(g), group: '下级层级', pos: g.pos.slice(0, 3), focus: false });
+    }
+  }
+  return out;
+}
+
+/**
  * @param {string} nodeId 注册表节点 id
  * @returns {object} main.js 的 start() 可直接消费的 system 配置
  */
@@ -163,7 +198,10 @@ export function makeCosmosSystem(nodeId) {
   // 叶子节点：把「上级 + 同级」摆成可点的导航锚点，任何一层都能继续走。
   // 肖像页：中心留给星系本体，导航锚点整体退到外围，不压在盘面上。
   const members = [];
-  if (portrait) {
+  if (node.id === 'localgroup' && !portrait) {
+    // 真实坐标重建：成员来自本星系群星表，位置用真实三维坐标
+    members.push(...localGroupMembers(node, kids, focus));
+  } else if (portrait) {
     if (parent) {
       members.push({ node: parent, group: '上级层级', pos: [0, 7.4, -13.6], focus: true });
     }

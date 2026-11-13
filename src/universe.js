@@ -25,6 +25,11 @@
  */
 
 import { STELLAR_SYSTEMS, systemSpanLy, systemColor } from './data/stellar-orbits.js';
+import { lgById } from './data/galaxies.js';
+
+// 本星系群成员的 pos = 它们在「本星系群页」里的场景坐标，直接取自真实星表
+// （lgById(id).pos 由赤经赤纬+真实距离算出），不再手写定性数值。
+const lgPos = (id) => lgById(id).pos;
 
 export const ROOT_ID = 'universe';
 
@@ -199,7 +204,7 @@ export const NODES = [
   N({
     id: 'milkyway', parent: 'localgroup', kind: 'galaxy', detail: 'full',
     zh: '银河系', en: 'Milky Way',
-    url: 'galaxy.html', spanLy: 1.0e5, dLy: 0, pos: [0, 0, 0],
+    url: 'galaxy.html', spanLy: 1.0e5, dLy: 0, pos: lgPos('milkyway'),
     focus: 'solar', color: 0xfff0c0, accent: '#9b8cff', seed: 10016,
     scaleZh: '直径约 10 万光年', scaleEn: '~100,000 light-years across',
     briefZh: '我们的家园星系，棒旋结构、约 2000 亿颗恒星。太阳位于一条主旋臂上，距银心约 2.7 万光年。',
@@ -208,7 +213,7 @@ export const NODES = [
   N({
     id: 'andromeda', parent: 'localgroup', kind: 'galaxy', detail: 'portrait',
     zh: '仙女座星系', en: 'Andromeda Galaxy (M31)',
-    url: 'cosmos.html?node=andromeda', spanLy: 2.2e5, dLy: 2.5e6, pos: [-6.4, 0.6, -2.2],
+    url: 'cosmos.html?node=andromeda', spanLy: 2.2e5, dLy: 2.5e6, pos: lgPos('andromeda'),
     color: 0xffd8b0, accent: '#e0a878', seed: 25017,
     scaleZh: '直径约 22 万光年', scaleEn: '~220,000 light-years across',
     briefZh: '本星系群最大的星系，肉眼可见的最远天体。约 45 亿年后将与银河系合并。',
@@ -217,7 +222,7 @@ export const NODES = [
   N({
     id: 'triangulum', parent: 'localgroup', kind: 'galaxy', detail: 'portrait',
     zh: '三角座星系', en: 'Triangulum Galaxy (M33)',
-    url: 'cosmos.html?node=triangulum', spanLy: 6.0e4, dLy: 2.7e6, pos: [-4.2, -1.2, 5.4],
+    url: 'cosmos.html?node=triangulum', spanLy: 6.0e4, dLy: 2.7e6, pos: lgPos('triangulum'),
     color: 0xa8c8ff, accent: '#7fa0e0', seed: 27018,
     scaleZh: '直径约 6 万光年', scaleEn: '~60,000 light-years across',
     briefZh: '本星系群第三大星系，正面朝向我们的旋涡星系，恒星形成活跃。',
@@ -226,7 +231,7 @@ export const NODES = [
   N({
     id: 'lmc', parent: 'localgroup', kind: 'galaxy', detail: 'portrait',
     zh: '大麦哲伦云', en: 'Large Magellanic Cloud',
-    url: 'cosmos.html?node=lmc', spanLy: 1.4e4, dLy: 1.6e5, pos: [3.2, -2.0, 1.4],
+    url: 'cosmos.html?node=lmc', spanLy: 1.4e4, dLy: 1.6e5, pos: lgPos('lmc'),
     color: 0xbfd8ff, accent: '#8fb0e0', seed: 16019,
     scaleZh: '直径约 1.4 万光年', scaleEn: '~14,000 light-years across',
     briefZh: '银河系最大的卫星星系，肉眼可见于南天，内含明亮的蜘蛛星云。',
@@ -235,7 +240,7 @@ export const NODES = [
   N({
     id: 'smc', parent: 'localgroup', kind: 'galaxy', detail: 'portrait',
     zh: '小麦哲伦云', en: 'Small Magellanic Cloud',
-    url: 'cosmos.html?node=smc', spanLy: 7.0e3, dLy: 2.0e5, pos: [5.0, -2.8, 3.2],
+    url: 'cosmos.html?node=smc', spanLy: 7.0e3, dLy: 2.0e5, pos: lgPos('smc'),
     color: 0xc8d8ff, accent: '#9fb0d8', seed: 20020,
     scaleZh: '直径约 7000 光年', scaleEn: '~7,000 light-years across',
     briefZh: '与大麦哲伦云成对，被银河系潮汐拉出一条长长的麦哲伦星流。',
