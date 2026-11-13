@@ -271,6 +271,10 @@ export function makeCosmosSystem(nodeId) {
       : null,
     galaxy: {
       kind: portrait ? 'void' : fieldKind,
+      // 上层层级页（宇宙/超星系团/星系团/本星系群/星系/恒星系统）绝不渲染
+      // HYG 星场与 OpenNGC 深空点云——那些是「太阳系周边恒星球」，尺度错乱。
+      // 点云只在银河系本地星场页（src/systems/galaxy.js）出现。
+      catalogs: false,
       shape: fieldShape(node),
       seed: node.seed ?? 7,
       pointSize: kindsWeb ? 0.22 : 0.15,

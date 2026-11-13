@@ -758,7 +758,11 @@ export function start(system) {
     // （当前 HYG；OpenNGC / Gaia 预留）。坐标全部来自 src/coord/galactic.js 唯一真源，
     // 与银河系形态辉光同源同尺度（银心原点、kpc），作为真实恒星填满银盘。
     // 深空点云（OpenNGC 等）：渲染后留作可点击拾取目标（deepSkyCloud 在外层作用域声明）
-    if (galaxyGroup) {
+    if (galaxyGroup && system.galaxy.catalogs) {
+      // 仅「银河系本地星场页」渲染天体目录点云（HYG 恒星形成区恒星 + OpenNGC
+      // 深空）。上层 cosmos 层级页（宇宙网 / 超星系团 / 星系团 / 本星系群 / 星系
+      // 肖像 / 恒星系统）一律跳过：那些页面的 galaxyGroup 是宇宙纤维场 / 形态辉光，
+      // 把「太阳系周边恒星球」塞进去尺度错乱。标记见各 system.galaxy.catalogs。
       for (const cat of Object.values(CATALOGS)) {
         if (!cat.enabled || !cat.data || cat.data.count <= 0) continue;
         const catGeo = new THREE.BufferGeometry();
@@ -2675,6 +2679,13 @@ export function start(system) {
           fieldPoints: (galaxyField
             ? (() => { let n = 0; galaxyField.traverse((o) => { if (o.isPoints) n += o.geometry.attributes.position.count; }); return n; })()
             : 0),
+          // 目录点云（HYG 星场 / OpenNGC 深空）按名字前缀识别：本该只出现在
+          // 银河系本地星场页。上层 cosmos 页此数组应为空，用来验证点球不再串场。
+          catalogClouds: (galaxyGroup
+            ? galaxyGroup.children
+              .filter((o) => o.isPoints && o.name && o.name.startsWith('catalog:'))
+              .map((o) => ({ name: o.name, count: o.geometry.attributes.position.count }))
+            : []),
           visibleBodies: [...byId.entries()]
             .filter(([, n]) => n.group.visible).map(([id]) => id),
           visiblePortraits: [...starPortraits.values()].filter((p) => p.group.visible).length,

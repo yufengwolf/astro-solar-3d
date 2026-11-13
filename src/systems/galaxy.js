@@ -367,6 +367,11 @@ export default {
   sunPos: SUN_GALACTIC_POS,// 小档的观察焦点：太阳（大档焦点仍是银心原点）
   timeScale: 0,            // 星系自转走 galaxyGroup 专用慢转，不依赖 timeScale
   galaxy: {
+    // catalogs: 仅「银河系本地星场页」（本文件，galaxy.html 入口）渲染 HYG 星场
+    // 与 OpenNGC 深空点云。上层 cosmos 层级页（universe / 超星系团 / 星系团 /
+    // 本星系群 …）一律不设该标记，避免把「太阳系周边恒星球」错误地塞进
+    // 1000 万光年～930 亿光年尺度的宇宙网 / 星系群页面里。
+    catalogs: true,
     scaleKpc: 1,
     diskRadiusKpc: 15,
     thicknessKpc: 0.6,
