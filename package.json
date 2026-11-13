@@ -39,6 +39,8 @@
     "check:points": "node scripts/check-star-points.mjs",
     "check:orbits": "node scripts/check-orbits.mjs",
     "check:backdrop": "node scripts/check-backdrop.mjs",
+    "build:hyg": "node scripts/build-hyg.mjs",
+    "check:hyg": "node scripts/check-hyg.mjs",
     "sync": "node scripts/sync.mjs"
   },
   "devDependencies": {

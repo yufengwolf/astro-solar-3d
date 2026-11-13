@@ -390,6 +390,7 @@ export default {
   sunPos: SUN_GALACTIC_POS,// 小档的观察焦点：太阳（大档焦点仍是银心原点）
   timeScale: 0,            // 星系自转走 galaxyGroup 专用慢转，不依赖 timeScale
   galaxy: {
+    hygStarfield: true,       // 接入 HYG Database 真实坐标星场（~12 万颗本地恒星，填满银盘）
     scaleKpc: 1,
     diskRadiusKpc: 15,
     thicknessKpc: 0.6,

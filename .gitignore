@@ -30,6 +30,9 @@ static/links.html
 Thumbs.db
 desktop.ini
 
+# 原始天文数据包（从外部源下载，体积大，不入库；由 npm run build:hyg 读取）
+data/raw/
+
 # 本地日志
 *.log
 

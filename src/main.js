@@ -24,6 +24,7 @@ import {
   resolveCurrentId, parentHref, childHref,
   href as universeHref, isEnglish as isEnglishLang,
 } from './universe.js';
+import { HYG_POS, HYG_COL, HYG_COUNT } from './data/hyg-stars.js';
 import { periodText as periodTextOf } from './orbit-tree.js';
 import { mountUniverseNav } from './nav.js';
 import { resolveBody, bodyHref, carryParams, currentPageFile } from './deeplinks.js';
@@ -736,6 +737,22 @@ export function start(system) {
       ? buildCosmosField(system.galaxy)
       : buildGalaxyField(system.galaxy, system.galaxy.scaleKpc ?? 1);
     (galaxyGroup || scene).add(galaxyField);
+    // HYG Database 真实坐标星场：~12 万颗本地恒星，按真实 (ra,dec,dist) → 银道坐标，
+    // 与旋臂点云同源同尺度（银心原点、kpc），作为密集背景星点填满银盘（解决"太空"问题）。
+    if (system.galaxy.hygStarfield && HYG_COUNT > 0) {
+      const hygGeo = new THREE.BufferGeometry();
+      hygGeo.setAttribute('position', new THREE.Float32BufferAttribute(HYG_POS, 3));
+      hygGeo.setAttribute('color', new THREE.Float32BufferAttribute(HYG_COL, 3));
+      const hygMat = new THREE.PointsMaterial({
+        size: 1.1, sizeAttenuation: false, vertexColors: true,
+        transparent: true, opacity: 0.9, depthWrite: false,
+        blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
+      });
+      const hygPoints = new THREE.Points(hygGeo, hygMat);
+      hygPoints.frustumCulled = false;
+      hygPoints.name = 'hygStarfield';
+      (galaxyGroup || scene).add(hygPoints);
+    }
     // 银盘柔光是盘状星系专属；宇宙网加一层大椭圆辉光只会糊掉黑洞洞的空洞
     if (system.galaxy.glow !== false) {
       galaxyGlow = makeGalaxyGlow(system.galaxy.diskRadiusKpc ?? 15);
