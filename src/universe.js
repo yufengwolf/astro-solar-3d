@@ -24,6 +24,8 @@
  *    不影响可达性 —— 所有节点都能打开，将来替换成专用页只改 url。
  */
 
+import { STELLAR_SYSTEMS, systemSpanLy, systemColor } from './data/stellar-orbits.js';
+
 export const ROOT_ID = 'universe';
 
 /** 层级类型名（中英），用于宇宙地图里的类型标注 */
@@ -314,6 +316,32 @@ export const NODES = [
     scaleZh: '卡戎轨道半径约 2 万公里', scaleEn: 'Charon orbit ~20,000 km',
     briefZh: '冥王星与卡戎构成双矮行星系统，质心在冥王星之外，另有 4 颗小卫星近共振运行。',
     briefEn: 'Pluto and Charon form a double dwarf system with the barycenter outside Pluto, plus four small moons in near resonance.',
+  }),
+
+  // ---- 银河系层：AU 级恒星系统（按真实层级逐层互绕） ----
+  // 这些不是「我们所在的那条链」上的节点，而是银河系页里点开某颗恒星后的
+  // 侧枝下钻。画面仍复用 cosmos.html，但由 makeStellarSystem() 展开层级轨道树：
+  // 三合 / 四合 / 六合星的每一层都按自己的真实六根数绕本层质心互绕。
+  // 新增系统只需在 src/data/stellar-orbits.js 里加一项，这里与深链清单自动跟着变。
+  ...STELLAR_SYSTEMS.map((s, i) => {
+    const ang = (i / STELLAR_SYSTEMS.length) * Math.PI * 2 + 0.4;
+    const r = 7.4 + (i % 3) * 1.1;
+    const rootA = s.tree.aAu;
+    const a = rootA < 1 ? rootA.toFixed(4) : rootA.toFixed(1);
+    const color = systemColor(s);
+    return N({
+      id: s.nodeId, parent: 'milkyway', kind: 'system', detail: 'full',
+      zh: s.zh, en: s.en,
+      url: `cosmos.html?node=${s.nodeId}`,
+      spanLy: systemSpanLy(s), dLy: s.distanceLy,
+      pos: [Math.cos(ang) * r, ((i % 3) - 1) * 0.7, Math.sin(ang) * r],
+      color, accent: `#${color.toString(16).padStart(6, '0')}`,
+      seed: 31000 + i,
+      scaleZh: `轨道半长轴约 ${a} 天文单位`,
+      scaleEn: `Orbit semi-major axis ~${a} AU`,
+      briefZh: s.briefZh,
+      briefEn: s.briefEn,
+    });
   }),
 ];
 

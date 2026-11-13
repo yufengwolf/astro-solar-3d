@@ -60,7 +60,7 @@
     <h2>参数说明</h2>
     <ul>
       <li><b>页面级</b>：<code>galaxy.html</code> / <code>solar.html</code> 直接打开整页；也可用 <code>go.html?page=galaxy</code>。</li>
-      <li><b>层级节点</b>：<code>cosmos.html?node=localgroup</code>（本星系群）或万能入口 <code>go.html?node=milkyway</code>（银河系）。注册表里 28 个节点都有独立链接，新增星系自动进表。</li>
+      <li><b>层级节点</b>：<code>cosmos.html?node=localgroup</code>（本星系群）或万能入口 <code>go.html?node=milkyway</code>（银河系）。注册表里每个节点都有独立链接，新增星系 / 恒星系统自动进表。</li>
       <li><code>?body=&lt;ID&gt;</code>：天体直达。ID 全局唯一时可直接用短名；跨页同名用 <code>页面:ID</code>（如 <code>jupiter:jupiter</code>）。<code>go.html?body=&lt;ID&gt;</code> 只记 ID 即可。</li>
       <li><code>&amp;embed=1</code>：精简嵌入模式，隐藏导航、菜单、控制面板；点「复制嵌入代码」已自动带上。</li>
       <li><code>&amp;lang=en</code>：英文界面。<code>#earth</code> 形式的锚点同样可用，且可在不刷新页面的情况下切换天体。</li>
@@ -127,7 +127,7 @@ for (const p of DATA.pages) {
   });
 }
 
-// 2) 层级节点：注册表里的 28 个节点，包括银河系与所有上级 / 同级星系
+// 2) 层级节点：注册表里的全部节点，包括银河系、上级 / 同级星系与 AU 级恒星系统
 const nodeTb = addSection(`宇宙层级节点直达 · ${DATA.nodes.length} 个节点`);
 for (const n of DATA.nodes) {
   addRow(nodeTb, {

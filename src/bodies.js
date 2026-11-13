@@ -111,8 +111,12 @@ export function createBody(def) {
   const anchor = new THREE.Object3D();
 
   if (def.orbit) {
-    group.rotation.y = (def.orbit.node ?? 0) * DEG;
-    plane.rotation.x = (def.orbit.inc ?? 0) * DEG;
+    group.rotation.y = (def.orbit.node ?? 0) * DEG;       // Ω 升交点经度
+    plane.rotation.x = (def.orbit.inc ?? 0) * DEG;        // i 轨道倾角
+    // ω 近星点幅角：轨道面内的旋转。Three.js 默认欧拉序 XYZ 给出
+    // R = Rx(i)·Ry(ω)，即先在轨道面内转 ω，再把整面倾斜 i，
+    // 与标准轨道要素序列一致。双星互绕正是靠主星 ω+180° 实现精确反相。
+    if (def.orbit.argPeri) plane.rotation.y = def.orbit.argPeri * DEG;
     group.add(plane);
     plane.add(anchor);
     if (mesh) plane.add(mesh);

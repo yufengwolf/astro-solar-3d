@@ -25,6 +25,8 @@ import {
   focusChildOf, levelName, detailName, isEnglish, anchorPointSize,
 } from '../universe.js';
 import { hasPortrait, portraitOf } from '../portraits.js';
+import { isStellarSystemNode } from '../data/stellar-orbits.js';
+import { makeStellarSystem } from '../stellar-system.js';
 
 const fmt = (v) => String(Math.round(v * 100) / 100);
 
@@ -137,6 +139,12 @@ function anchorDef(m, node, navGroup, pos, isFocus, navMode = false) {
  * @returns {object} main.js 的 start() 可直接消费的 system 配置
  */
 export function makeCosmosSystem(nodeId) {
+  // AU 级恒星系统也走这条通用层级通道，但画面内容完全不同：不是一堆层级
+  // 锚点，而是两颗按真实六根数绕共同质心互绕的恒星（可带环双星行星）。
+  // 委托给独立工厂，避免把轨道数学塞进层级页面生成器。
+  if (isStellarSystemNode(nodeId)) {
+    return makeStellarSystem(nodeId, { background: starfield });
+  }
   const node = byId(nodeId) ?? byId('universe');
   const kids = childrenOf(node.id);
   const parent = parentOf(node.id);

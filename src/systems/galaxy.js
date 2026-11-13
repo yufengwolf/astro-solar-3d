@@ -1,5 +1,24 @@
 import { starfield } from './shared.js';
 import { POINT_STARS } from '../data/star-points.js';
+import { SYSTEM_BY_BODY } from '../data/stellar-orbits.js';
+
+/**
+ * 银河系页 → AU 级恒星系统页的下钻入口。
+ * 数据层里每个系统列出「哪些银河系天体点进去」，这里统一挂 childSystem，
+ * 信息卡按钮与左侧菜单行内标签都会自动出现。目标链接由 main.js 用
+ * universeHref(stellarSystem) 生成，能自动保留 ?lang=en。
+ */
+function withStellarDrilldown(def) {
+  const s = SYSTEM_BY_BODY.get(def.id);
+  if (!s) return def;
+  return {
+    ...def,
+    stellarSystem: s.nodeId,
+    childSystem: `cosmos.html?node=${s.nodeId}`,
+    childSystemLabel: s.zh,
+    childSystemShort: s.multiplicity > 2 ? `${s.multiplicity} 合星系统` : '双星系统',
+  };
+}
 
 // ---------- 比例尺分档 ----------
 // 1 场景单位 = 1 kpc = 3261.56 光年。每档取景半径严格 10× 递减，
@@ -462,5 +481,5 @@ export default {
     ...deepSkyBodies,
     ...nearbyBodies,
     ...pointBodies,
-  ],
+  ].map(withStellarDrilldown),
 };

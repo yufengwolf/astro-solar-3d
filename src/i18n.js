@@ -79,6 +79,20 @@ const UI = {
     backdropAnchor: (name, d) => `背景锚点：${name}（约 ${d} 外，此刻也在画面里）`,
     backdropBtn: (i, total, n) => `换个背景 ${i}/${total} · 视野内 ${n} 个天体`,
     focusSpan: (s) => `当前视野 · ${s}`,
+    // AU 级恒星系统页：真实互绕的时间控件
+    orbitClockYear: (y) => `模拟 +${y}`,
+    orbitClockPeriod: (p) => `最快一层 ${p}`,
+    orbitClockPeriodHint: (p) => `当前时间基准为周期最短的一层（一圈约 24 秒）；最外层周期为 ${p}，可用「层 N」按钮切换`,
+    orbitClockPause: '暂停',
+    orbitClockPlay: '继续',
+    orbitClockRate: (r) => `${r} 天/秒`,
+    orbitClockTitle: '每一层按真实六根数求解 · 两成员绕本层共同质心互绕',
+    orbitClockMultiplicity: (n, k) => `${n} 合星 · ${k} 层轨道`,
+    orbitClockLevel: (i) => `层 ${i}`,
+    orbitClockLevelTitle: (label, p) => `按「${label}」的周期 ${p} 走完一圈约 24 秒`,
+    orbitClockReal: '真实比例',
+    orbitClockCompressed: '层级压缩',
+    orbitClockScaleTitle: '切换跨层级显示压缩 / 严格线性比例（物理根数不变）',
     // 宇宙层级导航
     navRoot: '宇宙遨游',
     navHome: '星图首页',
@@ -148,6 +162,20 @@ const UI = {
     backdropAnchor: (name, d) => `Backdrop anchor: ${name}, ~${d} away and still in this view`,
     backdropBtn: (i, total, n) => `Change backdrop ${i}/${total} · ${n} bodies in view`,
     focusSpan: (s) => `View · ${s}`,
+    // Time controls on AU-scale stellar-system pages
+    orbitClockYear: (y) => `Elapsed +${y}`,
+    orbitClockPeriod: (p) => `Fastest level ${p}`,
+    orbitClockPeriodHint: (p) => `Time is paced by the shortest-period level (one orbit in ~24 s); the outermost period is ${p}. Use the L buttons to switch.`,
+    orbitClockPause: 'Pause',
+    orbitClockPlay: 'Play',
+    orbitClockRate: (r) => `${r} d/s`,
+    orbitClockTitle: 'Real elements per level · each pair orbits its own barycentre',
+    orbitClockMultiplicity: (n, k) => `${n} stars · ${k} levels`,
+    orbitClockLevel: (i) => `L${i}`,
+    orbitClockLevelTitle: (label, p) => `Pace by ${label} (${p}) — one orbit in ~24 s`,
+    orbitClockReal: 'True scale',
+    orbitClockCompressed: 'Compressed',
+    orbitClockScaleTitle: 'Toggle inter-level compression / true linear scale (physical elements unchanged)',
     // Cosmic hierarchy navigation
     navRoot: 'Cosmic Atlas',
     navHome: 'Atlas home',
@@ -233,6 +261,12 @@ const SYSTEM_EN = {
   '土星系统': 'Saturn System', '天王星系统': 'Uranus System',
   '海王星系统': 'Neptune System', '冥王星系统': 'Pluto System',
   '卫星系': 'Moons', '卫星系统': 'Moon system',
+  '双星系统': 'Binary system',
+  '天狼星双星': 'Sirius A / B', '南门二双星': 'Alpha Centauri A / B',
+  '南河三双星': 'Procyon A / B', '波江座 40 B/C 双星': '40 Eridani B / C',
+  '五车二 Aa/Ab 双星': 'Capella Aa / Ab', '北河二 A/B 双星': 'Castor A / B',
+  '开普勒 16 环双星系统': 'Kepler-16 A / B + b', '大陵五食双星': 'Algol Aa1 / Aa2',
+  '天鹅座 X-1 双星': 'Cygnus X-1', 'V404 天鹅座双星': 'V404 Cygni',
 };
 const GROUP_EN = {
   '定位锚点': 'Anchors', '星云与遗迹': 'Nebulae & Remnants',
@@ -242,6 +276,8 @@ const GROUP_EN = {
   '亮星与超巨星': 'Bright Stars & Supergiants',
   '特超巨星': 'Hypergiants & LBVs',
   '聚星系统成员': 'Multiple-star Members',
+  '双星成员': 'Binary members', '系统质心': 'Barycentre',
+  '环双星行星': 'Circumbinary planet',
   '下级层级': 'Child levels', '上级层级': 'Parent level', '同级层级': 'Sibling levels',
 };
 const VIEW_EN = {
@@ -264,7 +300,11 @@ const INFO_KEY_EN = {
   '位置': 'Position', '视星等': 'Apparent magnitude', '光谱型': 'Spectral type',
   '发现': 'Discovered', '备注': 'Notes', '卫星数': 'Moons', '尺度': 'Scale',
   '形态': 'Morphology', '半径': 'Radius', '所属系统': 'System',
-  '坐标来源': 'Coordinates source',
+  '坐标来源': 'Coordinates source', '绕质心半长轴': 'Barycentric semi-major axis',
+  '轨道数据': 'Orbit data', '所属层级': 'Hierarchy level', '层级深度': 'Level depth',
+  '系统': 'System', '相对半长轴': 'Relative semi-major axis',
+  '层级压缩': 'Inter-level compression', '数据精度': 'Data quality',
+  '成员质量': 'Component masses', '在上一层的轨道': 'Orbit in parent level',
 };
 
 export const systemName = (s) => (isEn() ? (SYSTEM_EN[s] ?? s) : s);

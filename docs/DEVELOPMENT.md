@@ -336,10 +336,23 @@ npm run check:comet   # 用生产代码验证：彗尾是否严格背离太阳�
 | 粒度 | 参数 | 落地 |
 | --- | --- | --- |
 | 整页 | `?page=<key>`（`go.html`）或直接 `<页面>.html` | `pages[]`，9 个 3D 页面 |
-| 层级节点 | `?node=<id>`（`go.html` / `cosmos.html`） | `nodes[]`，由 `src/universe.js` 的 `NODES` 全量展开，当前 28 个 |
-| 天体 | `?body=<id>` / `#<id>` / `?focus=<id>` | `bodies[]`，130 条；同名跨页用 `页面:ID` 消歧 |
+| 层级节点 | `?node=<id>`（`go.html` / `cosmos.html`） | `nodes[]`，由 `src/universe.js` 的 `NODES` 全量展开（含银河系页下钻的 AU 级恒星系统），数量随注册表自动变化 |
+| 天体 | `?body=<id>` / `#<id>` / `?focus=<id>` | `bodies[]`，数量由 `src/systems/*.js` 动态展开；同名跨页用 `页面:ID` 消歧 |
 
 `go.html` 的 `body` 优先于 `node` 优先于 `page`，`lang` / `embed` / `scale` / `debug` 等参数原样透传。清单版本为 `2`（`pages` / `nodes` / `bodies`）；只加天体时改 `src/systems/*.js`，只加星系时改 `NODES`，跑一次 `npm run gen:links` 三层都会更新，`npm run check:deeplinks` 会比对注册表防止漏项。
+
+### AU 级恒星系统：层级轨道树
+
+`cosmos.html?node=sys_<key>` 复用通用层级页，由 `src/systems/cosmos.js` 委托给 `src/stellar-system.js`；不新增 HTML / Vite 入口。
+
+| 文件 | 职责 |
+| --- | --- |
+| `src/data/stellar-orbits.js` | 唯一数据真相源。每个系统是一棵二叉树：`pair` 可嵌套 `pair`，`star` 是叶。南门二三合、五车二四合、北河二六合按真实引力层级建模，**不压成一对双星**。每层自带六根数、质量、来源与 `quality` 分级 |
+| `src/orbit-tree.js` | 递归展开成 `system.bodies`：每层一个质心 body，两成员按 `a₁=a·m₂/M` / `a₂=a·m₁/M` 分解，共 `e/i/Ω/P/M0`、`ω` 差 180°，任意时刻质心守恒 |
+| `src/main.js` (`inertialParent`) | 子层挂到**不旋转**的惯性 frame，避免子层轨道面继承父层的 Ω/i/ω |
+| `src/scale.js` (`displayScale`) | 跨层尺度差可达 6 万倍；按深度统一显示尺度，层内比例保持真实。信息卡逐层写出压缩倍数，`?scale=real` 切回严格线性 |
+
+时间档按每层周期各给一个「一圈约 24 秒」，HUD 的「层 N」按钮切换基准；`npm run check:orbits` 递归校验逐层开普勒自洽、质心守恒与 Three 变换链一致性。
 
 ### 恒星真实尺度与三维背景
 

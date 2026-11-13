@@ -272,6 +272,8 @@ p {
 /* 点天体：脉冲星/白矮星/磁星、聚星系统成员（半径极小或坐标与主星重合） */
 .bn-item.type-pulsar .bn-dot { background: #9fe8ff; color: #9fe8ff; box-shadow: 0 0 6px #6fd4ff; }
 .bn-item.type-member .bn-dot { background: #c9b8ff; color: #c9b8ff; box-shadow: 0 0 6px #a98fff; }
+/* AU 级恒星系统页：共同质心（小暗点，两颗星都绕它转） */
+.bn-item.type-barycenter .bn-dot { background: #8fa4c8; color: #8fa4c8; box-shadow: 0 0 4px #6f86ad; }
 /* 菜单分组标题（按类型分隔，避免十几个天体挤成一长串） */
 .bn-group {
     padding: 9px 8px 4px;
@@ -324,6 +326,57 @@ p {
     cursor: pointer;
 }
 .child-btn:hover { filter: brightness(1.08); }
+
+/* ===== AU 级恒星系统：真实互绕的时间控件 =====
+   放在底部居中，避开右下角比例尺与左下角「跟随中」角标。 */
+.orbit-clock {
+    position: fixed;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 8px;
+    max-width: calc(100vw - 16px);
+    background: rgba(6, 10, 22, 0.82);
+    border: 1px solid rgba(143, 180, 240, 0.22);
+    border-radius: 9px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(6px);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 11px;
+    line-height: 1.2;
+    color: #dce8ff;
+    white-space: nowrap;
+}
+.orbit-clock .oc-btn {
+    flex: 0 0 auto;
+    padding: 2px 7px;
+    border: 1px solid rgba(160, 190, 240, 0.28);
+    border-radius: 6px;
+    background: rgba(120, 155, 220, 0.14);
+    color: #eaf2ff;
+    font: inherit;
+    cursor: pointer;
+}
+.orbit-clock .oc-btn:hover { background: rgba(140, 180, 245, 0.28); }
+.orbit-clock .oc-play { min-width: 40px; }
+.orbit-clock .oc-now { color: #fff4c8; font-variant-numeric: tabular-nums; }
+.orbit-clock .oc-period, .orbit-clock .oc-rate { color: #9fb3d6; }
+.orbit-clock.paused .oc-now { opacity: 0.55; }
+/* 成员数 / 层数：先把「几合星」写在控件上，避免又被当成一对双星 */
+.orbit-clock .oc-multi { color: #ffd9a0; font-weight: 600; }
+.orbit-clock .oc-levels { display: inline-flex; gap: 3px; align-items: center; }
+.orbit-clock .oc-levels::before { content: '·'; color: #6f86ad; margin-right: 2px; }
+.orbit-clock .oc-level { padding: 2px 5px; color: #a9bfe4; }
+.orbit-clock .oc-level.active {
+    background: rgba(130, 180, 255, 0.30);
+    border-color: rgba(180, 210, 255, 0.60);
+    color: #fff;
+}
+.orbit-clock .oc-scale { color: #a8e9c8; border-color: rgba(150, 225, 190, 0.35); }
 
 /* ===== 右下角简化比例尺：只有「− 当前尺度 ＋」 =====
    旧的 6 档按钮 + 说明 + 「换个背景」占了主屏底部一整条，现在全部去掉。 */
@@ -419,6 +472,7 @@ p {
 .bl-item.type-exoplanet { color: #a8e9c8; }
 .bl-item.type-pulsar { color: #9fe8ff; }
 .bl-item.type-member { color: #c9b8ff; }
+.bl-item.type-barycenter { color: #9fb0d0; }
 /* 太阳系总览 / 各卫星系统页的类型配色 */
 .bl-item.type-sun { color: #ffe08a; }
 .bl-item.type-planet { color: #bcd4ff; }
@@ -786,6 +840,17 @@ body.embed #bodyLabels { z-index: 9; }
 
   /* 跟随提示：左下角一枚可点的小胶囊，点击即退出聚焦 */
   #followBadge { left: 6px; bottom: 8px; font-size: 10px; padding: 3px 8px; gap: 5px; }
+
+  /* 恒星系统时间控件：窄屏收掉周期/倍率文字，保留「几合星」与层级切换 */
+  .orbit-clock {
+    bottom: 6px; gap: 4px; padding: 3px 5px; font-size: 10px;
+    flex-wrap: wrap; justify-content: center; white-space: normal;
+  }
+  .orbit-clock .oc-btn { padding: 1px 5px; }
+  .orbit-clock .oc-play { min-width: 32px; }
+  .orbit-clock .oc-now, .orbit-clock .oc-period, .orbit-clock .oc-rate { display: none; }
+  .orbit-clock .oc-multi { font-size: 10px; }
+  .orbit-clock .oc-levels::before { content: none; }
 }
 
 /* 横屏手机（高度受限）：进一步收紧竖向空间，把 3D 主体让出来 */

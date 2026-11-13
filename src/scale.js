@@ -62,9 +62,20 @@ export function applyScale(system) {
   // km -> 场景单位：轨道距离用这把尺子（注意是"每 km 对应多少单位"，不是 refUnits 本身）
   const kRadius = refUnits / (sizer.refDef.realRadiusKm || 1);
 
+  /**
+   * 显示用半长轴（AU）= 物理半长轴 × 该层 displayScale。
+   * 层级恒星系统里，同一层两条轨道共享一个系数，因此层内质量比 / 偏心率
+   * 完全保留；只有跨层级的间距被压缩以便同屏可见。displayScale 缺省为 1，
+   * 太阳系 / 卫星系统不受影响。
+   */
+  const displayAU = (def) => {
+    const raw = def.orbit.aAU != null ? def.orbit.aAU : (def.orbit.aKm ?? 0) / AU_KM;
+    return raw * (def.orbit.displayScale ?? 1);
+  };
   const orbitsAU = system.bodies
-    .map((b) => b.orbit?.aAU)
-    .filter((v) => typeof v === 'number');
+    .filter((b) => b.orbit)
+    .map(displayAU)
+    .filter((v) => Number.isFinite(v) && v > 0);
   const maxAU = orbitsAU.length ? Math.max(...orbitsAU) : 1;
   const power = scale.distancePower ?? 0.4;
   const maxDistance = scale.maxDistance ?? 340;
@@ -87,7 +98,7 @@ export function applyScale(system) {
     if (def.orbit) {
       const aKm = def.orbit.aAU != null ? def.orbit.aAU * AU_KM : def.orbit.aKm;
       if (scale.distanceMode === 'power') {
-        const aAU = aKm / AU_KM;
+        const aAU = displayAU(def);
         def.orbit.a = (Math.pow(aAU, power) / Math.pow(maxAU, power)) * maxDistance;
       } else {
         def.orbit.a = aKm * kRadius * (scale.distanceFactor ?? 1);

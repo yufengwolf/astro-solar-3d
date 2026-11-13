@@ -22,8 +22,9 @@ import {
 } from './backdrop.js';
 import {
   resolveCurrentId, parentHref, childHref,
-  href as universeHref,
+  href as universeHref, isEnglish as isEnglishLang,
 } from './universe.js';
+import { periodText as periodTextOf } from './orbit-tree.js';
 import { mountUniverseNav } from './nav.js';
 import { resolveBody, bodyHref, carryParams, currentPageFile } from './deeplinks.js';
 import { orbitAngle, coRotate } from './follow.js';
@@ -517,7 +518,7 @@ export function start(system) {
   // 安全网：无太阳的子系统里，没有 parent 的天体就是中心天体，不该带公转轨道。
   // （REAL 里地球/木星等都存着绕日轨道，漏写 noOrbit 会让整个系统飞出画面。）
   for (const def of system.bodies) {
-    if (!system.hasSun && !def.parent && def.orbit) {
+    if (!system.hasSun && !system.barycentric && !def.parent && def.orbit) {
       console.warn(`[start] ${def.id} 是子系统中心天体却带有轨道，已忽略；如需保留请显式配置`);
       delete def.orbit;
     }
@@ -629,6 +630,9 @@ export function start(system) {
   // ---------- 构建天体 ----------
   const nodes = [];
   const byId = new Map();
+  // 多层恒星系统的惯性系子框架：见下方 build 与 animate 里的说明。
+  const inertialChildren = [];
+  const _frameVec = new THREE.Vector3();
   const deepSkyShowcases = new Map();  // id → 放大展示物（默认隐藏，聚焦时显示）
   const starPortraits = new Map();     // id → 恒星近景球（默认隐藏，镜头贴近才显示）
   // 银盘尺度的背景对象：聚焦深空天体特写时要整体藏掉，否则近距离下
@@ -653,7 +657,21 @@ export function start(system) {
       scene.add(node.comet.dust);
     }
     if (def.parent && byId.has(def.parent)) {
-      byId.get(def.parent).anchor.add(node.group);
+      if (def.inertialParent) {
+        // 层级恒星系统：父层的 group/plane 带着 Ω / i / ω 旋转。若把子层
+        // group 直接挂到父 anchor，子层的轨道要素会被父层旋转一起带偏，
+        // 三合 / 四合星的层级几何就画错了。改挂到一个不旋转的惯性 frame：
+        // frame 每帧只跟随父质心的世界坐标，子层自己的 Ω / i / ω 仍在
+        // 同一个全局天球参考系里施加。
+        const frame = new THREE.Group();
+        (galaxyGroup || scene).add(frame);
+        frame.add(node.group);
+        node.childFrame = frame;
+        node.parentId = def.parent;
+        inertialChildren.push(node);   // 展开器按父先于子的顺序生成
+      } else {
+        byId.get(def.parent).anchor.add(node.group);
+      }
     } else {
       (galaxyGroup || scene).add(node.group);
     }
@@ -737,7 +755,7 @@ export function start(system) {
   // 代表更远、方向固定的星空：任何视角都有星点，转镜头时按方向切换，仍是
   // 三维透视，而不是一张贴在屏幕上的静态背景图。
   let skyPoints = null;
-  if (system.scaleTiers) {
+  if (system.scaleTiers || system.starfield) {
     const N = 2400;
     const skyRng = mulberry32(20261110);
     const skyPos = new Float32Array(N * 3);
@@ -831,7 +849,9 @@ export function start(system) {
   if (compactUI()) { try { gui.close(); } catch (_) {} }
   const guiContainer = document.getElementById('gui-container');
   if (guiContainer) guiContainer.appendChild(gui.domElement);
-  gui.add(settings, 'timeScale', 0, 200).name(t('timeScale'));
+  // 双星周期可以从 2.87 天到 467 年，固定 200 天/秒的上限会让长周期系统
+  // 几分钟都走不完一圈。上限按系统自身倍率的 8 倍放宽，仍保留 200 的地板。
+  const timeCtrl = gui.add(settings, 'timeScale', 0, system.timeScaleMax ?? 200).name(t('timeScale'));
   gui.add(settings, 'followMotion').name(t('followMotion')).onChange(() => {
     refreshPause();
     if (follow && selected) {
@@ -933,6 +953,7 @@ export function start(system) {
   // 矮行星 id 集合：用于左侧菜单的类型着色（避免逐个解析 info 文本）
   const DWARF = new Set(['ceres', 'pluto', 'haumea', 'makemake', 'eris']);
   function bodyType(b) {
+    if (b.barycenter) return 'barycenter';
     if (b.deepSky) {
       if (b.deepSky.kind === 'cluster') return 'cluster';
       if (b.deepSky.kind === 'blackhole') return 'blackhole';
@@ -941,6 +962,10 @@ export function start(system) {
     if (b.comet) return 'comet';
     if (b.navGroup === '系外行星系统') return 'exoplanet';
     if (b.navGroup === '疏散星团') return 'opencluster';
+    // 层级恒星系统成员的物理类别（白矮星 / 黑洞 / 环双星行星）。
+    if (b.bodyKind === 'blackhole') return 'blackhole';
+    if (b.bodyKind === 'whitedwarf') return 'pulsar';
+    if (b.bodyKind === 'planet') return 'exoplanet';
     // 点天体按物理类别着色：脉冲星/白矮星、聚星成员、恒星级黑洞。
     // 它们仍带 star:true 复用自发光点材质，但菜单圆点与名字标签要能区分。
     if (b.pointOnly && b.pointKind === 'pulsar') return 'pulsar';
@@ -1561,7 +1586,7 @@ export function start(system) {
         go.title = t('childTitle', goLabel);
         go.onclick = (ev) => {
           ev.stopPropagation();
-          window.location.href = universeHref(e.def.id) ?? e.def.childSystem;
+          window.location.href = universeHref(e.def.stellarSystem ?? e.def.id) ?? e.def.childSystem;
         };
         row.appendChild(go);
       }
@@ -1577,6 +1602,112 @@ export function start(system) {
   let isZoomingOut = false;
   let paused = false;
   const homeVec = new THREE.Vector3(...homePosition);
+
+  // ---------- AU 级恒星系统：真实互绕的时间控件 ----------
+  // 长周期双星（如北河二 467 年）默认倍率会让一圈约 24 秒走完；这里额外给
+  // 暂停与 ×2 / ÷2，方便把「两颗星确实在动、且始终分居质心两侧」看清楚。
+  let clockPaused = false;
+  let clockNowEl = null;
+  let clockRateEl = null;
+  let clockFrame = 0;
+  if (system.orbitClock) {
+    const bar = document.createElement('div');
+    bar.id = 'orbitClock';
+    bar.className = 'orbit-clock';
+    bar.title = t('orbitClockTitle');
+
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'oc-btn oc-play';
+    play.textContent = t('orbitClockPause');
+    play.onclick = () => {
+      clockPaused = !clockPaused;
+      play.textContent = t(clockPaused ? 'orbitClockPlay' : 'orbitClockPause');
+      bar.classList.toggle('paused', clockPaused);
+    };
+
+    const now = document.createElement('span');
+    now.className = 'oc-now';
+    const period = document.createElement('span');
+    period.className = 'oc-period';
+    period.textContent = t('orbitClockPeriod',
+      system.orbitClock.shortestText ?? system.orbitClock.periodText);
+    period.title = t('orbitClockPeriodHint', system.orbitClock.periodText);
+    const rate = document.createElement('span');
+    rate.className = 'oc-rate';
+
+    // 多层级系统的成员数与层数：先把「这是几合星」说清楚，避免再被画成双星。
+    const multi = document.createElement('span');
+    multi.className = 'oc-multi';
+    multi.textContent = t('orbitClockMultiplicity',
+      system.orbitClock.multiplicity ?? 2, system.orbitClock.levelCount ?? 1);
+
+    const setRateValue = (next) => {
+      settings.timeScale = Math.min(system.timeScaleMax ?? 200, Math.max(0, next));
+      rate.textContent = t('orbitClockRate', Math.round(settings.timeScale * 100) / 100);
+      timeCtrl.updateDisplay();
+    };
+    const setRate = (factor) => setRateValue(settings.timeScale * factor);
+    const slow = document.createElement('button');
+    slow.type = 'button';
+    slow.className = 'oc-btn';
+    slow.textContent = '÷2';
+    slow.title = t('orbitClockRate', '');
+    slow.onclick = () => setRate(0.5);
+    const fast = document.createElement('button');
+    fast.type = 'button';
+    fast.className = 'oc-btn';
+    fast.textContent = '×2';
+    fast.onclick = () => setRate(2);
+
+    // 层级速率：每层周期差可达 5 个数量级（北河二 0.814 天 ↔ 1.4 万年），
+    // 一套倍率不可能同时看清。按钮把时间基准切到指定层，一圈仍约 24 秒。
+    const levelBtns = [];
+    const levels = system.orbitClock.levels ?? [];
+    if (levels.length > 1) {
+      const box = document.createElement('span');
+      box.className = 'oc-levels';
+      levels.forEach((lv, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'oc-btn oc-level' + (i === 0 ? ' active' : '');
+        btn.textContent = t('orbitClockLevel', i + 1);
+        btn.title = t('orbitClockLevelTitle',
+          (isEnglishLang() ? lv.labelEn : lv.labelZh),
+          periodTextOf(lv.periodDays));
+        btn.onclick = () => {
+          setRateValue(lv.timeScale);
+          for (const b of levelBtns) b.classList.toggle('active', b === btn);
+        };
+        levelBtns.push(btn);
+        box.appendChild(btn);
+      });
+      bar.append(multi, box);
+    } else {
+      bar.append(multi);
+    }
+
+    // 跨层显示压缩开关：切回严格线性时内层会缩成点，这是真实尺度；
+    // 用 URL 参数保存，便于分享与自动化验证。
+    const scaleBtn = document.createElement('button');
+    scaleBtn.type = 'button';
+    scaleBtn.className = 'oc-btn oc-scale';
+    scaleBtn.textContent = t(system.orbitClock.realScale
+      ? 'orbitClockCompressed' : 'orbitClockReal');
+    scaleBtn.title = t('orbitClockScaleTitle');
+    scaleBtn.onclick = () => {
+      const u = new URL(window.location.href);
+      if (system.orbitClock.realScale) u.searchParams.delete('scale');
+      else u.searchParams.set('scale', 'real');
+      window.location.href = u.toString();
+    };
+
+    bar.append(play, now, period, rate, slow, fast, scaleBtn);
+    document.body.appendChild(bar);
+    clockNowEl = now;
+    clockRateEl = rate;
+    rate.textContent = t('orbitClockRate', Math.round(settings.timeScale * 100) / 100);
+  }
 
   // ---------- 跟随镜头：时间不停，镜头跟着选中的天体走 ----------
   /** 统一决定时间是否冻结：跟随时默认继续推进，关掉开关才退回冻结观察。 */
@@ -1817,7 +1948,7 @@ export function start(system) {
       btn.className = 'child-btn';
       const goLabel = t('childBtn', systemName(def.childSystemLabel ?? bodyName(def)));
       btn.textContent = goLabel;
-      btn.onclick = () => { window.location.href = universeHref(def.id) ?? def.childSystem; };
+      btn.onclick = () => { window.location.href = universeHref(def.stellarSystem ?? def.id) ?? def.childSystem; };
       box.querySelector('.planet-info-content').appendChild(btn);
     }
     box.style.display = 'block';
@@ -1910,8 +2041,16 @@ export function start(system) {
     const now = performance.now();
     const dtSec = Math.min((now - last) / 1000, 0.1);
     last = now;
-    const dtDays = paused ? 0 : dtSec * settings.timeScale; // 本帧推进的真实天数
+    const dtDays = (paused || clockPaused) ? 0 : dtSec * settings.timeScale; // 本帧推进的真实天数
     elapsedDays += dtDays;
+    if (clockNowEl && (++clockFrame & 7) === 0) {
+      const y = elapsedDays / 365.25;
+      clockNowEl.textContent = t('orbitClockYear',
+        y >= 100 ? Math.round(y).toLocaleString('en-US') : y.toFixed(2));
+      if (clockRateEl) {
+        clockRateEl.textContent = t('orbitClockRate', Math.round(settings.timeScale * 100) / 100);
+      }
+    }
 
     for (const n of nodes) {
       const d = n.def;
@@ -1940,6 +2079,22 @@ export function start(system) {
         n.atmosphere.rotateY(((2 * Math.PI) / (d.atmosphereRotateHours / 24)) * dtDays);
       }
     }
+
+    // 层级恒星系统的惯性子框架：所有成员的轨道局部位置本帧已写进
+    // mesh / anchor，这里按「父先于子」的顺序把每个 frame 摆到父质心的
+    // 世界坐标，然后立刻刷新该子树的矩阵，供下一层读取世界位置。
+    // scene 根节点无旋转缩放，因此 world 坐标可直接当 frame.position 用。
+    if (inertialChildren.length) {
+      scene.updateMatrixWorld(true);
+      for (const n of inertialChildren) {
+        const p = byId.get(n.parentId);
+        if (!p) continue;
+        (p.mesh ?? p.anchor).getWorldPosition(_frameVec);
+        n.childFrame.position.copy(_frameVec);
+        n.childFrame.updateMatrixWorld(true);
+      }
+    }
+
     // 彗发 / 彗尾：依赖本帧刚写好的位置与偏近点角，必须排在公转更新之后
     cometGlobals.uTime.value = performance.now() / 1000; // 驱动彗尾湍流缓慢漂移
     for (const n of nodes) {
@@ -2377,6 +2532,30 @@ export function start(system) {
         return {
           paused,
           elapsedDays,
+          // AU 级双星页：CDP 用 orbitPositions 逐帧比对，确认两星确实在动
+          // 且始终分居质心两侧（不是静态摆位、也不是一颗绕静止主星）。
+          orbitClock: system.orbitClock ?? null,
+          orbitPairs: system.orbitPairs ?? [],
+          // 层级恒星系统：逐 body 的显示系数与 parent 链，供 CDP 验证
+          // 惯性子框架、跨层压缩与 ?scale=real 开关确实接到了渲染层。
+          orbitDisplay: Object.fromEntries([...byId]
+            .filter(([, n]) => n.def?.orbit)
+            .map(([id, n]) => [id, n.def.orbit.displayScale ?? 1])),
+          orbitTree: (system.bodies ?? [])
+            .filter((b) => b.parent)
+            .map((b) => ({
+              id: b.id, parent: b.parent,
+              inertial: b.inertialParent === true,
+              depth: b.hierarchyDepth ?? null,
+            })),
+          clockPaused,
+          // 含不带 orbit 的根质心：层级质心守恒需要它的世界坐标当基准。
+          orbitPositions: Object.fromEntries([...byId]
+            .map(([id, n]) => {
+              const v = new THREE.Vector3();
+              (n.mesh ?? n.anchor).getWorldPosition(v);
+              return [id, v.toArray()];
+            })),
           selected: selected?.id ?? null,
           following: follow?.id ?? null,
           followMotion: settings.followMotion,
