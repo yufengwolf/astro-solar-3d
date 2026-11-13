@@ -26,6 +26,7 @@
 
 import { STELLAR_SYSTEMS, systemSpanLy, systemColor } from './data/stellar-orbits.js';
 import { lgById } from './data/galaxies.js';
+import { cosmicVec, COSMIC_LY_PER_KPC } from './data/cosmic-structures.js';
 
 // 本星系群成员的 pos = 它们在「本星系群页」里的场景坐标，直接取自真实星表
 // （lgById(id).pos 由赤经赤纬+真实距离算出），不再手写定性数值。
@@ -490,3 +491,50 @@ export function tree() {
   };
   return childrenOf(null).map((c) => build(c.id));
 }
+
+/**
+ * 上层结构真实坐标化：用 COSMIC_REAL（真实 RA/Dec/距离）派生每个非根节点的
+ * `pos` 与 `dLy`，替换原本的定性手写坐标。
+ *
+ * 规则：父级页面的「焦点」子节点落在原点，其余成员 = (真实坐标 − 焦点真实坐标)
+ * 归一化进 ±~13 单位（extent≈17，留边距）。这样每个页面里的相对方向与相对距离
+ * 都是真实的（宇宙网、本超星系团、本地宇宙纤维的真实几何），只是整体尺度被压缩到
+ * 适配页面——与 galaxies.js 给本星系群用的 lgPos 同源同思路。
+ *
+ * 不在 COSMIC_REAL 里的节点（如 milkyway/andromeda 等本星系群成员、行星系统）
+ * 保留原有 pos（本星系群成员走 lgPos），不被覆盖。
+ */
+(function deriveCosmicPositions() {
+  const sub = (a, b) => (a && b ? [a[0] - b[0], a[1] - b[1], a[2] - b[2]] : null);
+  const mag = (v) => (v ? Math.hypot(v[0], v[1], v[2]) : 0);
+  const TARGET = 13; // 归一化目标半径（单位）
+
+  // 1) 原始相对偏移（相对父级页面的焦点节点）
+  const raw = new Map();
+  for (const n of NODES) {
+    if (!n.parent) continue;
+    const parent = byId(n.parent);
+    const refId = parent?.focus ?? n.parent;
+    const ref = cosmicVec(refId) ?? cosmicVec(n.parent);
+    const v = cosmicVec(n.id);
+    raw.set(n.id, v && ref ? sub(v, ref) : null);
+  }
+  // 2) 每个父级页面按最大跨度归一化
+  const scale = {};
+  for (const p of NODES) {
+    const kids = NODES.filter((k) => k.parent === p.id);
+    if (!kids.length) continue;
+    let maxd = 0;
+    for (const k of kids) { const rv = raw.get(k.id); if (rv) maxd = Math.max(maxd, mag(rv)); }
+    scale[p.id] = maxd > 1e-6 ? TARGET / maxd : 1;
+  }
+  // 3) 赋 pos 与 dLy（真实距离，光年）
+  for (const n of NODES) {
+    if (!n.parent) { n.pos = [0, 0, 0]; continue; }
+    const rv = raw.get(n.id);
+    if (!rv) continue; // 不在 COSMIC_REAL：保留原有 pos / dLy
+    const s = scale[n.parent] ?? 1;
+    n.pos = [rv[0] * s, rv[1] * s, rv[2] * s];
+    n.dLy = mag(rv) * COSMIC_LY_PER_KPC;
+  }
+})();
