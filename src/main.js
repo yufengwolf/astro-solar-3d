@@ -1442,64 +1442,23 @@ export function start(system) {
     updateBackdropUI();
   }
 
-  /**
-   * 点天体取景：点击名字 = 按真实距离自动切到合适的比例尺档位并对准它。
-   *
-   * 与 9R 恒星特写刻意分开：脉冲星半径 10 km、白矮星半径几千 km，按真实半径
-   * 把相机推到 9R（~1e-13 光年）会直接掉进 float32 场景坐标的精度地板，
-   * 球体画不出来、near 也裁不准。这些天体在银河系尺度上本来就是「一个点」，
-   * 价值在于坐标准确 + 名字可点 + 背景仍是三维星空，而不是贴脸看一个球。
-   *
-   * 三件必须同步的事，漏一件就会表现为「视野被锁住 / 画面跳一下」：
-   *  1) applyTier 会把 OrbitControls 的 min/maxDistance 收进本档窗口，
-   *     必须把上限放宽到能一路连续缩回 10 万光年，否则每帧被 clamp 拽回；
-   *  2) beginFollow 记下的是「切档之前」的相机偏移，必须改成切档后的偏移，
-   *     否则下一帧 updateFollow 会把相机瞬间拉回原位；
-   *  3) 可见性按三维视锥重算，背景里的远处天体才不会只剩孤点。
-   */
-  function setPointFocus(def, wp) {
-    if (!TIERS) return;
-    const tier = Math.max(0, Math.min(TIERS.length - 1, def.tier ?? currentTier));
-    applyTier(tier, { instant: true, focus: wp });
-    const dist = tierCamDist(tier);
-    controls.minDistance = Math.max(1e-15, POINT_MIN_LY * UNITS_PER_LY);
-    controls.maxDistance = Math.max(dist * 2, 1e5 * UNITS_PER_LY * 1.3);
-    controls.enableZoom = false;   // 滚轮仍由 continuousZoom 接管
-    if (follow) {
-      const off = camera.position.clone().sub(wp);
-      follow.want.copy(off);
-      follow.offset.copy(off);
-      follow.lastPos.copy(wp);
-    }
-    lastNear = -1;
-    lastVisibilitySpan = 0;
-    updateBackdropVisibility();
-    applyFocusAnchorScale();
-    updateBackdropUI();
-  }
+  // （setPointFocus 已移除：点击统一只做「定位」，不再按距离自动切档；见 selectBody）
 
   // 选中并飞向某个天体（菜单点击 / 3D 拾取共用）
+  // 统一策略：点击 = 在「当前尺度」下把镜头对准该天体的位置（定位），不切档、不自动进近照。
+  // 近照（恒星 9R 球面特写 / 太阳系·聚星系统下钻）改为信息卡里的按钮按需进入（见 showInfo）。
   function selectBody(id, opts = {}) {
     const def = infoById.get(id);
     const obj = focusObjectOf(id);
     if (!def || !obj) return;
     selected = def;
     if (TIERS) {
-      closeup = null;   // 换天体时先清掉上一颗的特写状态，再按新目标重建
+      closeup = null;   // 换天体时清掉上一颗的特写态；点击统一只做定位，不自动进近照
       const wp = new THREE.Vector3();
       obj.getWorldPosition(wp);
+      // 定位：保持当前档位（尺度不变），仅把焦点移到该天体 —— 仍身处银河系，只是看清楚它在哪
       beginFollow(def, obj, null, 'keep');
-      if (starPortraits.has(def.id)) {
-        // 点恒星（菜单 / 3D 拾取 / 外链 / hash 都一样）= 自动把比例尺调到
-        // 能清晰看到这颗球的真实尺度（9 倍真实半径），不再停在几光年外的针尖上。
-        setStarCloseup(def, obj);
-      } else if (def.pointOnly) {
-        // 脉冲星 / 白矮星 / 磁星 / 聚星成员：没有球面可看，按距离自动选档。
-        setPointFocus(def, wp);
-      } else {
-        // 星云 / 星团 / 黑洞仍走档位示意展示物，保持原来的上下文浏览手感。
-        applyTier(def.tier ?? currentTier, { instant: true, focus: wp });
-      }
+      applyTier(currentTier, { instant: true, focus: wp });
     } else {
       focusOn(def, obj);
     }
@@ -1954,6 +1913,15 @@ export function start(system) {
       btn.textContent = goLabel;
       btn.onclick = () => { window.location.href = universeHref(def.stellarSystem ?? def.id) ?? def.childSystem; };
       box.querySelector('.planet-info-content').appendChild(btn);
+    }
+    // 有真实球面特写的恒星：信息卡给「查看近照」按钮，点在原位放大看球（背景仍在），
+    // 不再像以前那样一点击就自动跳 9R 特写。与「点击只定位」统一：近照是用户主动选择。
+    if (!def.childSystem && starPortraits.has(def.id)) {
+      const cBtn = document.createElement('button');
+      cBtn.className = 'child-btn';
+      cBtn.textContent = t('closeupBtn');
+      cBtn.onclick = () => { const o = focusObjectOf(def.id); if (o) setStarCloseup(def, o); };
+      box.querySelector('.planet-info-content').appendChild(cBtn);
     }
     box.style.display = 'block';
     infoDismissed = false;   // 用户选了新天体，允许镜头落地时重新展开信息卡
@@ -2436,7 +2404,7 @@ export function start(system) {
     let focusWp = null;
     if (focusId && infoById.has(focusId)) {
       const def = infoById.get(focusId);
-      if (!scaleParam) initTier = def.tier ?? 0;
+      if (!scaleParam) initTier = currentTier;  // 无显式 ?scale= 时只定位到当前尺度，不自动跳近照
       const obj = focusObjectOf(focusId);
       if (obj) {
         scene.updateMatrixWorld(true);
@@ -2450,13 +2418,8 @@ export function start(system) {
       selected = def;
       const obj = focusObjectOf(focusId);
       if (obj) {
+        // 统一入口：深链 / hash 也只做「定位」，近照交给信息卡按钮（与点击行为一致）
         beginFollow(def, obj, null, 'keep');
-        // 恒星外链直达：把镜头推到近景球已显形的距离，否则外部 iframe
-        // 打开只看到一个针尖，等于没有「直达的视觉位置」。
-        // 点天体没有近景球，改为按距离自动选档并同步跟随偏移（否则外链
-        // 打开后第一帧就被 updateFollow 拽回切档前的位置）。
-        if (def.pointOnly) setPointFocus(def, focusWp);
-        else setStarCloseup(def, obj);
       }
       setActiveShowcase(focusId);
       highlightNav(focusId);

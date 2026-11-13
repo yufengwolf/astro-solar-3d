@@ -288,12 +288,16 @@ const nearbyBodies = NEARBY_STARS.map((o) => {
 //
 // 关键取舍：不带 radiusSun、不带 deepSky。于是 main.js 不会给它挂 9R 近景球
 // （10 km 半径会把相机推到 1e-13 光年量级，float32 场景坐标与近裁剪面都会失效），
-// 点击名字改由 setPointFocus() 按 dLy 自动切到合适比例尺；远处天体依旧由
-// updateBackdropVisibility() 的三维视锥判定留在背景里。
+// 点击名字只做「定位」（在当前尺度下把镜头对准它，不自动切档），远处天体依旧由
+// updateBackdropVisibility() 的三维视锥判定留在背景里；近照改为信息卡按钮按需进入。
 const pointBodies = POINT_STARS.map((o) => {
   const [l, b] = equatorialToGalactic(o.ra, o.dec);
   const dKpc = o.dLy / LY_PER_KPC;
   const km = o.radiusKm;
+  const radiusSun = Number.isFinite(km) ? km / 695700 : undefined;  // 公里 → 太阳半径
+  // 真实恒星（带半径数据）挂 9R 球面特写：点击信息卡「查看近照」即可在原位放大看球，
+  // 背景仍是三维星空。脉冲星 / 黑洞 / 聚星成员 / 无半径数据的恒星仍是纯点（无球面可看）。
+  const hasPortrait = o.pointKind === 'star' && radiusSun !== undefined;
   const radiusText = Number.isFinite(km)
     ? (km >= 1e6 ? `约 ${(km / 695700).toFixed(1)} 倍太阳半径`
       : `约 ${Math.round(km).toLocaleString('en-US')} km`)
@@ -303,7 +307,8 @@ const pointBodies = POINT_STARS.map((o) => {
     name: o.name,
     nameEn: o.nameEn,
     star: true,
-    pointOnly: true,
+    pointOnly: !hasPortrait,   // 有球面特写的真实恒星不再被当成「只按点显示」
+    ...(radiusSun !== undefined ? { radiusSun } : {}),
     pointKind: o.pointKind,
     size: 0.07,
     fixedSize: 0.07,
@@ -318,9 +323,10 @@ const pointBodies = POINT_STARS.map((o) => {
     tier: tierForDistance(o.dLy),
     navGroup: o.group,
     info: {
-      类型: o.pointKind === 'pulsar' ? '致密残骸 · 只按点显示'
-        : o.pointKind === 'blackhole' ? '恒星级黑洞 · 只按点显示'
-          : o.pointKind === 'member' ? '聚星系统成员 · 只按点显示' : '恒星 · 只按点显示',
+      类型: hasPortrait ? '恒星'
+        : o.pointKind === 'pulsar' ? '致密残骸 · 只按点显示'
+          : o.pointKind === 'blackhole' ? '恒星级黑洞 · 只按点显示'
+            : o.pointKind === 'member' ? '聚星系统成员 · 只按点显示' : '恒星 · 只按点显示',
       ...(o.system ? { 所属系统: o.system } : {}),
       距离: `约 ${o.dLy < 10 ? o.dLy.toFixed(2) : Math.round(o.dLy).toLocaleString('en-US')} 光年`,
       ...(radiusText ? { 半径: radiusText } : {}),
