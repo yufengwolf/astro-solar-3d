@@ -57,12 +57,8 @@ export const COSMIC_REAL = {
   laniakea:      { ra: 157.5,    dec: -46.0,   distMpc: 60,   src: 'tully14' },
   perseuspisces: { ra: 49.9507,  dec: 41.5117, distMpc: 77,   src: 'opengnc+lit', ngc: 'NGC1275', z: 0.016813 },
   coma:          { ra: 195.0339, dec: 27.9770, distMpc: 90.9, src: 'cf3+opengnc', ngc: 'NGC4889', z: 0.0215, dErrMpc: 5.1 },
-  shapley:       { ra: 201.8,    dec: -31.0,   distMpc: 145,  src: 'lit' },
-  hercules:      { ra: 241.3,    dec: 17.7,    distMpc: 110,  src: 'lit' },
-  // 新增：其它近邻超星系团（真实方向，文献常用距离）
-  sculptorsc:    { ra: 12.0,     dec: -30.0,   distMpc: 90,   src: 'lit' },
-  horologium:    { ra: 55.0,     dec: -50.0,   distMpc: 140,  src: 'lit' },
-  piscescetus:   { ra: 15.0,     dec: 5.0,     distMpc: 120,  src: 'lit' },
+  // 纯 'lit' 占位超星系团（shapley / hercules / sculptorsc / horologium /
+  // piscescetus）已移除：无真实星表坐标，与已接入的真实点云数据不一致。
   // 宇宙学尺度的候选巨结构：红移 1.6~2.1，共动距离约 150~177 亿光年，
   // 取中值 ~163 亿光年 ≈ 5000 Mpc；RA 17h0m / Dec +27°45' 为 GRB 过密度中心。
   // 比近邻超星系团远 40 倍，deriveCosmicPositions() 会按方向把它放到画面边缘。

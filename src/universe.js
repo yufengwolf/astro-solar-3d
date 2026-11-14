@@ -97,51 +97,11 @@ export const NODES = [
     briefZh: '富含星系团的近邻超星系团，中心是著名的后发座星系团。',
     briefEn: 'A nearby supercluster rich in galaxy clusters, centred on the famous Coma Cluster.',
   }),
-  N({
-    id: 'shapley', parent: 'universe', kind: 'supercluster', detail: 'planned',
-    zh: '夏普力超星系团', en: 'Shapley Supercluster',
-    url: 'cosmos.html?node=shapley', spanLy: 5e8, dLy: 6.5e8, pos: [4.2, 2.6, 8.4],
-    color: 0xffc8a0, accent: '#e0a070', seed: 65005,
-    scaleZh: '直径约 5 亿光年', scaleEn: '~500 million light-years across',
-    briefZh: '已知最致密的近邻超星系团之一，质量巨大，是本星系群运动的重要引力来源。',
-    briefEn: 'One of the densest nearby superclusters; its mass contributes significantly to the motion of our Local Group.',
-  }),
-  N({
-    id: 'hercules', parent: 'universe', kind: 'supercluster', detail: 'planned',
-    zh: '武仙座超星系团', en: 'Hercules Supercluster',
-    url: 'cosmos.html?node=hercules', spanLy: 3.3e8, dLy: 5.0e8, pos: [-6.8, -2.2, 7.1],
-    color: 0xb8d8c0, accent: '#8fc0a0', seed: 50006,
-    scaleZh: '直径约 3.3 亿光年', scaleEn: '~330 million light-years across',
-    briefZh: '宇宙网中另一处高密度结点，与夏普力超星系团同属近邻大尺度结构。',
-    briefEn: 'Another dense node of the nearby cosmic web, alongside the Shapley concentration.',
-  }),
-  N({
-    id: 'sculptorsc', parent: 'universe', kind: 'supercluster', detail: 'planned',
-    zh: '玉夫座超星系团', en: 'Sculptor Supercluster',
-    url: 'cosmos.html?node=sculptorsc', spanLy: 2.0e8, dLy: 2.9e8, pos: [0, 0, 0],
-    color: 0xc0d0ff, accent: '#90a8f0', seed: 90008,
-    scaleZh: '直径约 2 亿光年', scaleEn: '~200 million light-years across',
-    briefZh: '南天近邻的一片星系密集区，又称玉夫座长城，与拉尼亚凯亚隔空洞相望。方向取自公开文献，距离仍是常用近似值。',
-    briefEn: 'A nearby galaxy concentration in the southern sky, also called the Sculptor Wall. Its direction comes from published catalogs; the distance remains a commonly used estimate.',
-  }),
-  N({
-    id: 'horologium', parent: 'universe', kind: 'supercluster', detail: 'planned',
-    zh: '时钟－网罟超星系团', en: 'Horologium–Reticulum Supercluster',
-    url: 'cosmos.html?node=horologium', spanLy: 4.0e8, dLy: 4.6e8, pos: [0, 0, 0],
-    color: 0xffc8d8, accent: '#e090a8', seed: 140009,
-    scaleZh: '直径约 4 亿光年', scaleEn: '~400 million light-years across',
-    briefZh: '南天已知最大的近邻超星系团之一，由多个富星系团连成一条长链，是宇宙网中的巨型结点。距离为公开文献常用值。',
-    briefEn: 'One of the largest nearby superclusters in the southern sky, a long chain of rich clusters forming a major cosmic-web node. Distance is a published estimate.',
-  }),
-  N({
-    id: 'piscescetus', parent: 'universe', kind: 'supercluster', detail: 'planned',
-    zh: '双鱼－鲸鱼超星系团', en: 'Pisces–Cetus Supercluster',
-    url: 'cosmos.html?node=piscescetus', spanLy: 3.5e8, dLy: 3.9e8, pos: [0, 0, 0],
-    color: 0xd0c0ff, accent: '#a890f0', seed: 120010,
-    scaleZh: '直径约 3.5 亿光年', scaleEn: '~350 million light-years across',
-    briefZh: '横跨双鱼与鲸鱼方向的细长星系纤维，与英仙－双鱼结构相邻，是近邻宇宙网的一条主干。距离为公开文献常用值。',
-    briefEn: 'An elongated galaxy filament across Pisces and Cetus, adjacent to the Perseus–Pisces chain and a main trunk of the nearby cosmic web. Distance is a published estimate.',
-  }),
+  // 纯 'lit' 文献占位超星系团（shapley / hercules / sculptorsc）已移除：
+  // 它们没有真实星表坐标，与已接入的真实点云数据（CF4 / 2M++ / NED-D）不一致。
+
+  // 纯 'lit' 文献占位超星系团（horologium）已移除：无真实星表坐标。
+  // 纯 'lit' 文献占位超星系团（piscescetus）已移除：无真实星表坐标。
   N({
     id: 'hcbg', parent: 'universe', kind: 'supercluster', detail: 'planned',
     zh: '武仙－北冕座长城', en: 'Hercules–Corona Borealis Great Wall',
@@ -190,7 +150,7 @@ export const NODES = [
     briefEn: 'A galaxy filament on the outskirts of Laniakea, connected to the Hydra–Centaurus structure.',
   }),
   N({
-    id: 'a1367', parent: 'laniakea', kind: 'cluster', detail: 'planned',
+    id: 'a1367', parent: 'coma', kind: 'cluster', detail: 'planned',
     zh: '狮子座星系团', en: 'Leo Cluster (Abell 1367)',
     url: 'cosmos.html?node=a1367', spanLy: 1.6e7, dLy: 3.06e8, pos: [0, 0, 0],
     color: 0xd8d0a8, accent: '#c0b070', seed: 93901,
@@ -199,7 +159,7 @@ export const NODES = [
     briefEn: 'A rich cluster in the Coma Supercluster; its central galaxy NGC 3842 hosts one of the largest known black holes. Direction and distance come from real catalogs.',
   }),
   N({
-    id: 'a262', parent: 'laniakea', kind: 'cluster', detail: 'planned',
+    id: 'a262', parent: 'perseuspisces', kind: 'cluster', detail: 'planned',
     zh: '仙女座星系团', en: 'Andromeda Cluster (Abell 262)',
     url: 'cosmos.html?node=a262', spanLy: 1.2e7, dLy: 2.12e8, pos: [0, 0, 0],
     color: 0xb8c8e8, accent: '#8fa0c8', seed: 65002,

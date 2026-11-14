@@ -377,6 +377,10 @@ export function makeCosmosSystem(nodeId) {
   // 它的成员只能来自发现它时用的 GRB 红移样本，不能拿近邻星系硬凑。
   const allRealMembers = [...realMembers, ...hcbgMembersFor(node, 6.2)];
   const deepClouds = deepCloudsFor(node, kids.length ? 6.2 : 9);
+  // 有真实点云的页面（拉尼亚凯亚 / 室女座 / 各超星系团 / 长城）不再画「手写示意
+  // 坐标的成员星点圈」——结构由真实星表点云呈现，导航改由左侧菜单承担。否则这圈
+  // 手绘星点会落在真实数据球之外、与真实成员错位，误导观众（见 Q2 反馈）。
+  const hasCloud = deepClouds.length > 0 || !!twoMrsCloud;
   const members = [];
   if (node.id === 'localgroup' && !portrait) {
     // 真实坐标重建：成员来自本星系群星表，位置用真实三维坐标
@@ -394,7 +398,8 @@ export function makeCosmosSystem(nodeId) {
         focus: false,
       });
     });
-  } else if (kids.length) {
+  } else if (kids.length && !hasCloud) {
+    // 仅「无真实点云」的上层页（可观测宇宙）才把下级结构画成示意星点
     for (const k of kids) {
       members.push({
         node: k,
@@ -403,7 +408,7 @@ export function makeCosmosSystem(nodeId) {
         focus: k.id === focus?.id,
       });
     }
-  } else {
+  } else if (!hasCloud) {
     // 有真实成员时，导航锚点整体退到外圈，把画面中心留给该结构自己的天体
     const outer = allRealMembers.length > 0;
     if (parent) {

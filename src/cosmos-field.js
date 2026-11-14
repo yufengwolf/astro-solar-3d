@@ -28,6 +28,28 @@ function mulberry32(a) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+/** 文字精灵：在 3D 场景里做标注（如视界球）。仅在浏览器渲染时调用。 */
+function makeTextSprite(text, color) {
+  const fs = 48, pad = 10;
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  g.font = `bold ${fs}px sans-serif`;
+  const tw = Math.ceil(g.measureText(text).width);
+  c.width = tw + pad * 2;
+  c.height = fs + pad * 2;
+  const ctx = c.getContext('2d');
+  ctx.font = `bold ${fs}px sans-serif`;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(text, pad, c.height / 2);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
+  const sp = new THREE.Sprite(mat);
+  sp.userData.aspect = c.width / c.height;
+  return sp;
+}
 function randn(rng) {
   let u = 0, v = 0;
   while (u === 0) u = rng();
@@ -291,6 +313,17 @@ export function buildCosmosField(cfg) {
       }),
     );
     group.add(bubble);
+
+    // 视界标注：球顶加一行「视界 / Horizon」文字，明确这层点壳是粒子视界示意，
+    // 不是真实数据点（真实数据云只到 ~6 亿光年，远小于 465 亿光年视界球）。
+    if (typeof document !== 'undefined') {
+      const hl = makeTextSprite('视界 / Horizon', '#bcd2ff');
+      const h = SR * 0.11;
+      hl.scale.set(h * hl.userData.aspect, h, 1);
+      hl.position.set(0, SR * 0.9, 0);
+      hl.userData.shell = true; // 与视界球壳一样跳过相机缩放，保持固定尺寸
+      group.add(hl);
+    }
   }
 
   return group;
