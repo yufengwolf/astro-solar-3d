@@ -97,11 +97,53 @@ export const NODES = [
     briefZh: '富含星系团的近邻超星系团，中心是著名的后发座星系团。',
     briefEn: 'A nearby supercluster rich in galaxy clusters, centred on the famous Coma Cluster.',
   }),
-  // 纯 'lit' 文献占位超星系团（shapley / hercules / sculptorsc）已移除：
-  // 它们没有真实星表坐标，与已接入的真实点云数据（CF4 / 2M++ / NED-D）不一致。
-
-  // 纯 'lit' 文献占位超星系团（horologium）已移除：无真实星表坐标。
-  // 纯 'lit' 文献占位超星系团（piscescetus）已移除：无真实星表坐标。
+  // 以下 5 个超星系团为真实结构，坐标取文献团中心；页面由 2MRS / CF4 / 2M++
+  // 真实点云呈现（均落在 ~600 Mpc 巡天范围内，含这些天区的真实星系）。
+  N({
+    id: 'shapley', parent: 'universe', kind: 'supercluster', detail: 'planned',
+    zh: '夏普力超星系团', en: 'Shapley Supercluster',
+    url: 'cosmos.html?node=shapley', spanLy: 1.5e8, dLy: 2.2e8, pos: [0, 0, 0],
+    color: 0xff9a8a, accent: '#e07a68', seed: 22005,
+    scaleZh: '直径约 1.5 亿光年', scaleEn: '~150 million light-years across',
+    briefZh: '邻近最富的星系聚合之一，多个 Abell 富星系团沿视线方向叠成，是巨引源之外又一个强引力源。坐标取文献团中心，页面由 2MRS / CF4 / 2M++ 真实点云呈现。',
+    briefEn: 'One of the richest nearby galaxy concentrations — several Abell rich clusters stacked along the line of sight, a strong gravity source beyond the Great Attractor. Coordinate is the literature cluster centre; rendered from real 2MRS / CF4 / 2M++ point clouds.',
+  }),
+  N({
+    id: 'hercules', parent: 'universe', kind: 'supercluster', detail: 'planned',
+    zh: '武仙座超星系团', en: 'Hercules Supercluster',
+    url: 'cosmos.html?node=hercules', spanLy: 1.0e8, dLy: 1.55e8, pos: [0, 0, 0],
+    color: 0xc8b0ff, accent: '#a893f0', seed: 15506,
+    scaleZh: '直径约 1 亿光年', scaleEn: '~100 million light-years across',
+    briefZh: '邻近一条显著纤维，以武仙座星系团（阿贝尔 2151）为主，与拉尼亚凯亚隔室女座超星系团相望。坐标取文献团中心，页面由真实点云呈现。',
+    briefEn: 'A prominent nearby filament dominated by the Hercules Cluster (Abell 2151), lying across the Virgo Supercluster from Laniakea. Coordinate is the literature centre; rendered from real point clouds.',
+  }),
+  N({
+    id: 'sculptorsc', parent: 'universe', kind: 'supercluster', detail: 'planned',
+    zh: '玉夫座超星系团', en: 'Sculptor Supercluster',
+    url: 'cosmos.html?node=sculptorsc', spanLy: 7.0e7, dLy: 1.4e8, pos: [0, 0, 0],
+    color: 0xa8d8c0, accent: '#7fc0a0', seed: 14007,
+    scaleZh: '直径约 7000 万光年', scaleEn: '~70 million light-years across',
+    briefZh: '南天一条近邻纤维，含玉夫座星系团与凤凰座方向的结构，与拉尼亚凯亚共处于本宇宙网节点。坐标取文献团中心，页面由真实点云呈现。',
+    briefEn: 'A nearby southern filament containing the Sculptor Cluster and structures toward Phoenix, sharing the local cosmic-web node with Laniakea. Coordinate is the literature centre; rendered from real point clouds.',
+  }),
+  N({
+    id: 'horologium', parent: 'universe', kind: 'supercluster', detail: 'planned',
+    zh: '时钟座超星系团', en: 'Horologium Supercluster',
+    url: 'cosmos.html?node=horologium', spanLy: 1.0e8, dLy: 1.2e8, pos: [0, 0, 0],
+    color: 0xb0d0e8, accent: '#8fb0d0', seed: 12008,
+    scaleZh: '直径约 1 亿光年', scaleEn: '~100 million light-years across',
+    briefZh: '南天最富的聚合之一，与网罟座超星系团相邻，是南银帽里显著的星系集中区。坐标取文献团中心，页面由真实点云呈现。',
+    briefEn: 'One of the richest southern concentrations, adjacent to the Reticulum Supercluster and a prominent galaxy overdensity in the southern Galactic cap. Coordinate is the literature centre; rendered from real point clouds.',
+  }),
+  N({
+    id: 'piscescetus', parent: 'universe', kind: 'supercluster', detail: 'planned',
+    zh: '双鱼－鲸鱼座超星系团', en: 'Pisces–Cetus Supercluster',
+    url: 'cosmos.html?node=piscescetus', spanLy: 3.0e8, dLy: 1.5e8, pos: [0, 0, 0],
+    color: 0xe0c8a0, accent: '#c0a878', seed: 15009,
+    scaleZh: '长轴约 3 亿光年', scaleEn: '~300 million light-years along its major axis',
+    briefZh: '一条横亘赤道近邻天区的长纤维，由双鱼座、鲸鱼座方向的多个星系群串联而成，是已知最大的宇宙结构之一。坐标取文献团中心，页面由真实点云呈现。',
+    briefEn: 'A long filament sprawling across the equatorial nearby sky, strung together by galaxy groups in Pisces and Cetus — among the largest known cosmic structures. Coordinate is the literature centre; rendered from real point clouds.',
+  }),
   N({
     id: 'hcbg', parent: 'universe', kind: 'supercluster', detail: 'planned',
     zh: '武仙－北冕座长城', en: 'Hercules–Corona Borealis Great Wall',
