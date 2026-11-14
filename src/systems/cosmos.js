@@ -30,6 +30,7 @@ import { makeStellarSystem } from '../stellar-system.js';
 import { LG_GALAXIES } from '../data/galaxies.js';
 import { TWO_MRS_GROUPS } from '../data/2mrs.js';
 import { cosmicVec, cosmicSource, COSMIC_LY_PER_KPC } from '../data/cosmic-structures.js';
+import { HCBG_MEMBERS, DEEP_SOURCES, DEEP_BUILD_STATS } from '../data/deep/registry.js';
 
 const fmt = (v) => String(Math.round(v * 100) / 100);
 
@@ -279,6 +280,75 @@ function realMembersFor(node, hasKids) {
   };
 }
 
+// ── 深度星表：按层级叠加真实三维点云 ──────────────────────────────────
+// 与 2MRS 的点云不同，这里叠的是各星表**全量**入别的实测三维位置：
+//   · CF4   实测距离模数 DM + 银道坐标（55,874 星系，到 z≈0.1）
+//   · 2M++  Vcmb 红移距离 + 赤道坐标（69,160 真实星系）
+//   · HCBG  GRB 光谱红移 → 共动距离（357 个 z 最高到 6.7）
+// 每页只按「该结构真实中心 + 本层跨度」取局部体积，不做「最近 N 个」——
+// 后者会把离中心最近的点自动围成球壳，正是被反复投诉的「点形成的球体」。
+const DEEP_SURVEY_REACH_KPC = 600000; // ~600 Mpc，CF4 / 2M++ 的覆盖上限
+
+function deepCloudsFor(node, inner) {
+  if (node.kind === 'universe' || node.id === 'localgroup') return [];
+  const c = cosmicVec(node.id);
+  if (!c) return [];
+  const radiusKpc = Math.max(node.spanLy / COSMIC_LY_PER_KPC * 0.5, 12000);
+  const scale = inner / radiusKpc;
+  const base = { center: c, scale, maxKpc: radiusKpc };
+  if (node.id === 'hcbg') {
+    // 357 个 GRB 是覆盖全天、跨越全红移（z≈0.006–9.4）的示踪样本，不能用
+    // 「以结构中心为球心、固定半径」去筛（那样只剩 6 个）。必须按真实绝对坐标
+    // 整体渲染：scale 把最远 GRB（共动 ~9.52 Gpc）映射到 inner 单位，结构中心
+    // 落在约一半处；真实成员锚点（hcbgMembersFor）用的是同一套绝对坐标，二者重合。
+    return [{ id: 'hcbg', native: true, maxPoints: 4000, opacity: 0.85, size: 1.6,
+              scale: inner / 9.52e6 }];
+  }
+  if (Math.hypot(...c) > DEEP_SURVEY_REACH_KPC) return [];
+  return [
+    { ...base, id: 'cf4', maxPoints: 3600, opacity: 0.62, size: 1.2 },
+    { ...base, id: '2mpp', maxPoints: 3600, opacity: 0.46, size: 1.0 },
+  ];
+}
+
+/** HCBG 页的真实成员：发现这堵长城时所用的 GRB 红移样本 */
+function hcbgMembersFor(node, inner) {
+  if (node.id !== 'hcbg') return [];
+  const c = cosmicVec(node.id);
+  if (!c) return [];
+  // 优先取 1.6 ≤ z < 2.1 这一红移切片（论文里成团的那一批），再按到结构
+  // 中心的真实三维距离排序。全部位置都来自实测 RA/Dec/z，没有示意摆放。
+  const slice = HCBG_MEMBERS.filter((g) => g.z >= 1.6 && g.z < 2.1);
+  const pool = (slice.length >= 8 ? slice : HCBG_MEMBERS);
+  const ranked = pool
+    .map((g) => ({
+      g, off: [g.pos[0] - c[0], g.pos[1] - c[1], g.pos[2] - c[2]],
+      d: Math.hypot(g.pos[0] - c[0], g.pos[1] - c[1], g.pos[2] - c[2]),
+    }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 18);
+  if (!ranked.length) return [];
+  const maxd = Math.max(...ranked.map((r) => r.d), 1);
+  const s = inner / maxd;
+  return ranked.map(({ g, off, d }) => ({
+    node: {
+      id: `grb-${g.id}`,
+      zh: `伽马射线暴 ${g.id}`,
+      en: `GRB ${g.id}`,
+      kind: 'group', detail: 'planned',
+      spanLy: 1e6, dLy: g.dMpc * 3.26156e6,
+      color: 0xff8fa8, accent: '#ff8fa8',
+      scaleZh: `红移 z = ${g.z.toFixed(3)}`,
+      scaleEn: `redshift z = ${g.z.toFixed(3)}`,
+      briefZh: `Horváth et al. (2015) 的 GRB 红移样本：赤道坐标 RA ${g.ra.toFixed(2)}° / Dec ${g.de.toFixed(2)}°，光谱红移 z=${g.z.toFixed(3)}，T90 ${g.t90.toFixed(1)} 秒，共动距离约 ${(g.dMpc / 1000).toFixed(2)} Gpc。这类高红移伽马射线暴是武仙－北冕座长城的示踪天体；该结构本身的存在性仍有争议。`,
+      briefEn: `GRB from the Horváth et al. (2015) redshift sample: RA ${g.ra.toFixed(2)}°, Dec ${g.de.toFixed(2)}°, z=${g.z.toFixed(3)}, T90 ${g.t90.toFixed(1)} s, comoving distance ${(g.dMpc / 1000).toFixed(2)} Gpc. High-z GRBs trace the putative Hercules–Corona Borealis Great Wall, whose existence remains debated.`,
+    },
+    group: '真实成员',
+    pos: off.map((v) => v * s),
+    focus: false,
+  }));
+}
+
 /**
  * @param {string} nodeId 注册表节点 id
  * @returns {object} main.js 的 start() 可直接消费的 system 配置
@@ -303,6 +373,10 @@ export function makeCosmosSystem(nodeId) {
   // 所有上层结构页（含主链的拉尼亚凯亚 / 室女座）都补 2MRS 真实成员，
   // 不再按「有没有子节点」一刀切。
   const { list: realMembers, cloud: twoMrsCloud } = realMembersFor(node, kids.length > 0);
+  // 武仙－北冕座长城在 2MRS / CF4 / 2M++ 的巡天范围之外（z≈1.8），
+  // 它的成员只能来自发现它时用的 GRB 红移样本，不能拿近邻星系硬凑。
+  const allRealMembers = [...realMembers, ...hcbgMembersFor(node, 6.2)];
+  const deepClouds = deepCloudsFor(node, kids.length ? 6.2 : 9);
   const members = [];
   if (node.id === 'localgroup' && !portrait) {
     // 真实坐标重建：成员来自本星系群星表，位置用真实三维坐标
@@ -331,7 +405,7 @@ export function makeCosmosSystem(nodeId) {
     }
   } else {
     // 有真实成员时，导航锚点整体退到外圈，把画面中心留给该结构自己的天体
-    const outer = realMembers.length > 0;
+    const outer = allRealMembers.length > 0;
     if (parent) {
       members.push({ node: parent, group: '上级层级', pos: outer ? [0, 6, -14] : [0, 0, 0], focus: !outer });
     }
@@ -345,8 +419,8 @@ export function makeCosmosSystem(nodeId) {
       });
     });
   }
-  // 真实星表成员只给叶子页：主链 / 有下级的页面已有自己的成员，不叠加。
-  if (realMembers.length) members.push(...realMembers);
+  // 真实星表成员：主链 / 分支页 / 长城页都补，不再按「有没有子节点」一刀切。
+  if (allRealMembers.length) members.push(...allRealMembers);
   // 兜底：至少有一个天体，否则 applyScale / fitCamera 会取不到参考天体
   if (!members.length) {
     members.push({ node, group: '下级层级', pos: [0, 0, 0], focus: true });
@@ -374,7 +448,7 @@ export function makeCosmosSystem(nodeId) {
     sunPos: [0, 0, 0],
     // 肖像页的小档焦点必须留在星系中心；否则会飞到外围的「上级」锚点上。
     // 有真实星表成员的叶子页，焦点留在画面中心（结构本身），别飞到外圈的「上级」锚点
-    tierFocusId: portrait ? null : (focus?.id ?? (realMembers.length ? null : members[0].node.id)),
+    tierFocusId: portrait ? null : (focus?.id ?? (allRealMembers.length ? null : members[0].node.id)),
     timeScale: 0,
     portraitCaption: portrait
       ? `${t('morphLabel')} · ${isEnglish() ? portrait.morphEn : portrait.morphZh}\n`
@@ -400,6 +474,18 @@ export function makeCosmosSystem(nodeId) {
       // Table 3 全量成员星系点云：只在有 2MRS 邻域的上层结构页启用，
       // 坐标为「相对该结构真实中心」的实测银道系位置，不是太阳周边恒星。
       twoMrs: twoMrsCloud,
+      // 深度星表点云：CF4 / 2M++ / HCBG GRB，按本层真实中心与跨度取局部体积。
+      // 每项自带按需加载的模块 id，非本页不下载对应数据分包。
+      deepClouds,
+      // 点云源 + 两个「非点云」源也要让用户看得见：NED-D 是距离汇编（按
+      // Galaxy ID 聚合后供信息卡交叉），HyperLEDA 按 PGC 给 CF4 星系补形态。
+      dataSources: [
+        ...deepClouds.map((c) => DEEP_SOURCES[c.id].label),
+        ...(deepClouds.length ? [
+          `NED-D ${DEEP_BUILD_STATS['ned-d'].measurements.toLocaleString('en-US')} 次独立测距`,
+          `HyperLEDA ${DEEP_BUILD_STATS.hyperleda.rows.toLocaleString('en-US')} 个 PGC 星系（形态交叉 ${DEEP_BUILD_STATS.hyperleda.matchedCF4.toLocaleString('en-US')}）`,
+        ] : []),
+      ],
       // 背景点云只用锚点做「纤维汇聚 / 暗弱伴星系」的分布依据，
       // 不再把成员画成团块；颜色与密度按成员自身数据差异化。
       anchors: bodies.map((b) => ({ pos: b.galaxyPos, color: b.color, weight: b.weight })),

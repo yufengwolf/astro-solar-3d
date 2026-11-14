@@ -46,7 +46,9 @@
     "check:openngc": "node scripts/check-openngc.mjs",
     "build:2mrs": "node scripts/build-2mrs.mjs",
     "check:2mrs": "node scripts/check-2mrs.mjs",
-    "sync": "node scripts/sync.mjs"
+    "sync": "node scripts/sync.mjs",
+    "build:deep": "node scripts/build-deep.mjs",
+    "check:deep": "node scripts/check-deep.mjs"
   },
   "devDependencies": {
     "vite": "^4.5.0"

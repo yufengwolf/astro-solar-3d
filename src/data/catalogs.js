@@ -34,11 +34,15 @@ export const CATALOGS = {
       meta: OPENNGC_META,
     },
   },
-  // 预留：全银盘恒星（十亿级），先占位
+  // Gaia 已在 src/data/deep/ 单独接入：GCNS（太阳 100 pc 内 331,312 颗恒星
+  // 全量，含三角视差距离）。它不走这里的 starfield 目录通道，而是由
+  // system.galaxy.deepClouds 按需动态加载，并按比例尺档位淡入，避免与
+  // HYG / OpenNGC 一起被塞进每个页面的首屏包。Gaia DR3 全表 18 亿行
+  // （约 1 TB）不属于前端可承载范围，这里保留占位说明。
   gaia: {
     kind: 'starfield',
     enabled: false,
-    label: 'Gaia (planned)',
-    note: '全银盘真实恒星，体量大，需 LOD / 分块加载',
+    label: 'Gaia DR3 (via deep catalogs)',
+    note: '已接 GCNS 100 pc 全量（src/data/deep/gcns.js）；DR3 全表 18 亿行不适合前端加载',
   },
 };

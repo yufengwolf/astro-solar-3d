@@ -376,6 +376,9 @@ export default {
     // 本星系群 …）一律不设该标记，避免把「太阳系周边恒星球」错误地塞进
     // 1000 万光年～930 亿光年尺度的宇宙网 / 星系群页面里。
     catalogs: true,
+    // Gaia GCNS：太阳 100 pc 内 331,312 颗恒星的全量视差距离，坐标同为
+    // 银心原点 kpc，直接叠在银盘上（native），并与其他目录一起按档淡入。
+    deepClouds: [{ id: 'gcns', native: true, opacity: 0.55, size: 0.95, maxPoints: 9000 }],
     scaleKpc: 1,
     diskRadiusKpc: 15,
     thicknessKpc: 0.6,

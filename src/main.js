@@ -759,6 +759,7 @@ export function start(system) {
   let deepSkyCloud = null;
   let catalogClouds = [];
   let twoMrsCloud = null;
+  const deepClouds = [];
   if (system.galaxy) {
     galaxyField = system.galaxy.kind
       ? buildCosmosField(system.galaxy)
@@ -862,6 +863,75 @@ export function start(system) {
         twoMrsCloud.userData.baseOpacity = 0.55;
         (galaxyGroup || scene).add(twoMrsCloud);
       }).catch(() => { /* 点云只是背景层，加载失败不影响导航与信息卡 */ });
+    }
+    // 深度星表点云：CF4 / 2M++ / HCBG GRB / Gaia GCNS。
+    // 各源全量数据按源拆成独立分包，只有本页声明要用的源才动态下载；每颗点
+    // 都是实测天球坐标 + 实测距离模数 / 红移 / 视差，不是程序生成的装饰点。
+    // cosmos 页按「结构真实中心 + 本层跨度」取局部体积并归一化；galaxy 页的
+    // GCNS 本来就是银心原点 kpc 坐标，直接用（native），再交给按档淡入逻辑。
+    if (system.galaxy.deepClouds?.length) {
+      import('./data/deep/registry.js').then(({ DEEP_LOADERS, DEEP_SOURCES }) => {
+        for (const cfg of system.galaxy.deepClouds) {
+          const loader = DEEP_LOADERS[cfg.id];
+          const def = DEEP_SOURCES[cfg.id];
+          if (!loader || !def) continue;
+          loader().then((mod) => {
+            const { POS, AUX, COUNT } = mod;
+            const center = cfg.center ?? [0, 0, 0];
+            const scale = cfg.scale ?? 1;
+            const r2 = (cfg.maxKpc ?? Infinity) ** 2;
+            const hit = [];
+            for (let i = 0; i < COUNT; i++) {
+              const j = i * 3;
+              if (!cfg.native) {
+                const dx = POS[j] - center[0], dy = POS[j + 1] - center[1], dz = POS[j + 2] - center[2];
+                if (dx * dx + dy * dy + dz * dz > r2) continue;
+              }
+              hit.push(i);
+            }
+            // 数据全量入库，这里只等距抽稀控制 GPU 点数（不做「最近 N 个」，
+            // 否则会围成球壳；等距抽样保留整体各向异性结构）。
+            const step = Math.max(1, Math.ceil(hit.length / (cfg.maxPoints ?? 4000)));
+            const keep = [];
+            for (let i = 0; i < hit.length; i += step) keep.push(hit[i]);
+            if (!keep.length) return;
+            const posArr = new Float32Array(keep.length * 3);
+            const colArr = new Float32Array(keep.length * 3);
+            const base = new THREE.Color(def.color);
+            const stride = def.auxStride ?? 1;
+            for (let k = 0; k < keep.length; k++) {
+              const i = keep[k], j = i * 3;
+              posArr[k * 3] = (POS[j] - (cfg.native ? 0 : center[0])) * scale;
+              posArr[k * 3 + 1] = (POS[j + 1] - (cfg.native ? 0 : center[1])) * scale;
+              posArr[k * 3 + 2] = (POS[j + 2] - (cfg.native ? 0 : center[2])) * scale;
+              // 用真实物理量（DM / Vcmb / Plx / z）做微弱冷暖区分，只是让层次可读
+              const q = AUX && AUX.length
+                ? Math.min(1, Math.abs(AUX[i * stride]) / (def.auxMax ?? 1))
+                : 0.5;
+              colArr[k * 3] = Math.min(1, base.r * (0.72 + 0.42 * q));
+              colArr[k * 3 + 1] = Math.min(1, base.g * (0.82 + 0.20 * q));
+              colArr[k * 3 + 2] = Math.min(1, base.b * (1.0 - 0.18 * q));
+            }
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+            geo.setAttribute('color', new THREE.Float32BufferAttribute(colArr, 3));
+            const op = cfg.opacity ?? 0.6;
+            const mat = new THREE.PointsMaterial({
+              size: cfg.size ?? 1.05, sizeAttenuation: false, vertexColors: true,
+              transparent: true, opacity: op, depthWrite: false,
+              blending: THREE.AdditiveBlending, toneMapped: false, fog: false,
+            });
+            const cloud = new THREE.Points(geo, mat);
+            cloud.frustumCulled = false;
+            cloud.name = `deep:${cfg.id}`;
+            cloud.userData.baseOpacity = op;
+            (galaxyGroup || scene).add(cloud);
+            deepClouds.push(cloud);
+            // 银河系本地页：与 HYG / OpenNGC 一样按比例尺淡入，总览档别盖住旋臂
+            if (cfg.native) catalogClouds.push(cloud);
+          }).catch(() => { /* 背景点云加载失败不影响导航 */ });
+        }
+      }).catch(() => { /* 注册表加载失败不影响导航 */ });
     }
     // 银盘柔光是盘状星系专属；宇宙网加一层大椭圆辉光只会糊掉黑洞洞的空洞
     if (system.galaxy.glow !== false) {
@@ -1704,6 +1774,17 @@ export function start(system) {
       navRows.set(e.id, row);
     }
     nav.appendChild(list);
+    // 本页叠加了哪些真实星表：把来源明写在菜单底部，避免「看着像随机点」。
+    const srcLabels = system.galaxy?.dataSources;
+    if (srcLabels?.length) {
+      const cap = document.createElement('div');
+      cap.className = 'bn-caption';
+      cap.textContent = `${isEnglishLang() ? 'Catalogs' : '数据来源'}：${srcLabels.join(' · ')}`;
+      cap.title = isEnglishLang()
+        ? 'Every point in this view comes from a published astronomical catalog with measured coordinates and distances.'
+        : '本页点云均来自公开星表的实测坐标与距离，不是程序生成的装饰点。';
+      nav.appendChild(cap);
+    }
     document.body.appendChild(nav);
   }
 
@@ -2773,6 +2854,7 @@ export function start(system) {
             : []),
           // 上层结构页的 2MRS 真实成员星系点数；银河系/太阳系页应为 0
           twoMrsPoints: twoMrsCloud ? twoMrsCloud.geometry.attributes.position.count : 0,
+          deepClouds: deepClouds.map((c) => ({ name: c.name, count: c.geometry.attributes.position.count })),
           visibleBodies: [...byId.entries()]
             .filter(([, n]) => n.group.visible).map(([id]) => id),
           visiblePortraits: [...starPortraits.values()].filter((p) => p.group.visible).length,
