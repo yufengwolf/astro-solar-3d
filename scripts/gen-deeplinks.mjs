@@ -24,6 +24,10 @@ import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'nod
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { NODES, LEVELS, DETAILS, resolveCurrentId } from '../src/universe.js';
+import { LG_GALAXIES } from '../src/data/galaxies.js';
+import { TWO_MRS_GROUPS } from '../src/data/2mrs.js';
+import { HCBG_MEMBERS } from '../src/data/deep/registry.js';
+import { cosmicVec } from '../src/data/cosmic-structures.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '..');
@@ -145,24 +149,101 @@ const nodes = NODES.map((n) => {
 
 const payload = {
   version: 2,
-  note: '由 scripts/gen-deeplinks.mjs 生成，勿手工编辑。body 参数为全局唯一短名或 页面:ID；node 参数为宇宙层级节点 ID；page 参数为 3D 页面键名。',
+  note: '由 scripts/gen-deeplinks.mjs 生成，勿手工编辑。body 参数为全局唯一短名或 页面:ID；node 参数为宇宙层级节点 ID；page 参数为 3D 页面键名。动态成员用 node+body 组合，详见 members[]。',
   pages,
   nodes,
   bodies,
 };
+
+// ── 动态成员：每个都能被一条 URL 直达 ──────────────────────────────────
+// 这三层（pages/nodes/bodies）会被 main.js 静态 import，不能塞进几千条
+// 星表成员——否则 9 个入口的 bundle 全部膨胀。members[] 只写进公开清单
+// static/links.{json,html}：go.html 的 node+body 组合无需查表，裸 ID 入口
+// 才按需 fetch links.json。cosmos.js 的兜底保证每条 URL 真的能聚焦。
+const nodeById = new Map(NODES.map((n) => [n.id, n]));
+const nodeIds = new Set(nodeById.keys());
+const memberHosts = NODES
+  .filter((n) => ['supercluster', 'cluster', 'group'].includes(n.kind)
+    && !['localgroup', 'hcbg', 'universe'].includes(n.id))
+  .map((n) => ({ id: n.id, name: n.zh, c: cosmicVec(n.id) }))
+  .filter((h) => h.c);
+
+const members = [];
+const memberIds = new Set();
+const addMember = (m) => {
+  if (memberIds.has(m.id) || nodeIds.has(m.id)) return;
+  memberIds.add(m.id);
+  m.url = `cosmos.html?node=${encodeURIComponent(m.node)}&body=${encodeURIComponent(m.id)}`;
+  m.goUrl = `go.html?node=${encodeURIComponent(m.node)}&body=${encodeURIComponent(m.id)}`;
+  // go.html 可只记一个 ID：lg- 走规则，2mrs-/grb- 按需查 links.json
+  m.shortGoUrl = `go.html?body=${encodeURIComponent(m.id)}`;
+  members.push(m);
+};
+
+// 本星系群矮星系（90 个真实坐标成员，扣掉 5 个已有独立 3D 页的主星系）。
+// 统一 lg- 前缀：fornax / hercules / antlia 同时是上层星系团节点 ID，
+// 裸 ID 会发生真实冲突（实测 go.html?body=fornax 落到天炉座星系团页）。
+// 这里只看 major 标记，不能用 nodeIds.has()——那会把这 3 个矮星系漏掉。
+for (const g of LG_GALAXIES) {
+  if (g.major) continue;
+  addMember({
+    id: `lg-${g.id}`, nativeId: g.id, name: g.zh, en: g.en,
+    kind: 'lg', kindName: '本星系群成员', node: 'localgroup',
+    nodeName: nodeById.get('localgroup')?.zh ?? '本星系群',
+    source: 'galaxies.js 实测坐标',
+  });
+}
+
+// 2MRS 星系群（Lambert et al. 2020，3022 个）。规范落地页取三维距离最近
+// 的超星系团 / 星系团 / 星系群节点；真实坐标由 cosmicVec 派生，不是示意摆放。
+for (const g of TWO_MRS_GROUPS) {
+  let host = null, best = Infinity;
+  for (const h of memberHosts) {
+    const d = Math.hypot(g.pos[0] - h.c[0], g.pos[1] - h.c[1], g.pos[2] - h.c[2]);
+    if (d < best) { best = d; host = h; }
+  }
+  if (!host) continue;
+  const alias = g.alias ? ` · ${g.alias}` : '';
+  const rich = g.m200 >= 50;
+  addMember({
+    id: `2mrs-${g.id}`, nativeId: String(g.id),
+    name: `${rich ? '2MRS 星系团' : '2MRS 星系群'} ${g.id}${alias}`,
+    en: `${rich ? '2MRS cluster' : '2MRS group'} ${g.id}${alias}`,
+    kind: '2mrs', kindName: rich ? '2MRS 星系团' : '2MRS 星系群',
+    node: host.id, nodeName: host.name,
+    source: '2MRS · Lambert et al. 2020',
+  });
+}
+
+// HCBG 高红移 GRB（Horváth et al. 2015，357 个），统一落在长城页。
+for (const g of HCBG_MEMBERS) {
+  addMember({
+    id: `grb-${g.id}`, nativeId: String(g.id),
+    name: `伽马射线暴 ${g.id}`, en: `GRB ${g.id}`,
+    kind: 'grb', kindName: '高红移伽马射线暴', node: 'hcbg',
+    nodeName: nodeById.get('hcbg')?.zh ?? '武仙－北冕座长城',
+    source: 'HCBG · Horváth et al. 2015',
+  });
+}
+
 const json = JSON.stringify(payload, null, 2) + '\n';
+const publicPayload = { ...payload, members };
 
 mkdirSync(DATA, { recursive: true });
 mkdirSync(STATIC, { recursive: true });
 writeFileSync(resolve(DATA, 'deeplinks.js'), `// 自动生成，勿手工编辑。来源：scripts/gen-deeplinks.mjs\nexport default ${json};\n`, 'utf8');
 writeFileSync(resolve(DATA, 'deeplinks.json'), json, 'utf8');
-writeFileSync(resolve(STATIC, 'links.json'), json, 'utf8');
+writeFileSync(resolve(STATIC, 'links.json'), JSON.stringify(publicPayload, null, 2) + '\n', 'utf8');
 writeFileSync(
   resolve(STATIC, 'links.html'),
   readFileSync(resolve(here, 'links-template.html'), 'utf8')
-    .replace('/*__LINKS_DATA__*/', JSON.stringify(payload)),
+    .replace('/*__LINKS_DATA__*/', JSON.stringify(publicPayload)),
   'utf8',
 );
 
 rmSync(TMP, { recursive: true, force: true });
-console.log(`深链清单已生成：${bodies.length} 个天体 / ${pages.length} 个 3D 页面 / ${nodes.length} 个层级节点 → src/data/deeplinks.json、static/links.{json,html}`);
+const byKind = { lg: 0, '2mrs': 0, grb: 0 };
+for (const m of members) byKind[m.kind]++;
+console.log(`深链清单已生成：${bodies.length} 个天体 / ${pages.length} 个 3D 页面 / ${nodes.length} 个层级节点 / `
+  + `${members.length} 个动态成员（LG ${byKind.lg} · 2MRS ${byKind['2mrs']} · GRB ${byKind.grb}）`
+  + ' → src/data/deeplinks.json、static/links.{json,html}');

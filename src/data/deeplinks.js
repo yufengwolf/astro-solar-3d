@@ -1,7 +1,7 @@
 // 自动生成，勿手工编辑。来源：scripts/gen-deeplinks.mjs
 export default {
   "version": 2,
-  "note": "由 scripts/gen-deeplinks.mjs 生成，勿手工编辑。body 参数为全局唯一短名或 页面:ID；node 参数为宇宙层级节点 ID；page 参数为 3D 页面键名。",
+  "note": "由 scripts/gen-deeplinks.mjs 生成，勿手工编辑。body 参数为全局唯一短名或 页面:ID；node 参数为宇宙层级节点 ID；page 参数为 3D 页面键名。动态成员用 node+body 组合，详见 members[]。",
   "pages": [
     {
       "key": "solar",

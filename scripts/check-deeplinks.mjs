@@ -143,13 +143,38 @@ if (!mw || mw.url !== 'galaxy.html') fail('银河系节点没有直达 galaxy.ht
 if (!DATA.pages.some((p) => p.key === 'galaxy' && p.url === 'galaxy.html')) fail('银河系页面级外链缺失');
 if (!nodeById.has('universe') || !nodeById.has('andromeda')) fail('可观测宇宙 / 仙女座星系缺少外链');
 
+// ---- 动态成员层：2MRS / GRB / 矮星系每条都要有可直达链接 ----
+const pubData = JSON.parse(readFileSync(resolve(ROOT, 'static/links.json'), 'utf8'));
+const MEMBERS = pubData.members ?? [];
+if (!Array.isArray(MEMBERS) || MEMBERS.length < 3000) {
+  fail(`公开清单缺少 members[]（实际 ${MEMBERS.length} 条）`);
+}
+const memberIds = new Set();
+const memberKinds = new Set();
+for (const m of MEMBERS) {
+  if (memberIds.has(m.id)) fail(`动态成员 id 重复: ${m.id}`);
+  memberIds.add(m.id);
+  memberKinds.add(m.kind);
+  if (nodeById.has(m.id)) fail(`动态成员 id 与层级节点冲突: ${m.id}`);
+  if (!nodeById.has(m.node)) fail(`动态成员 ${m.id} 的落地节点 ${m.node} 不存在`);
+  const encId = encodeURIComponent(m.id);
+  const encNode = encodeURIComponent(m.node);
+  if (m.url !== `cosmos.html?node=${encNode}&body=${encId}`) fail(`动态成员 ${m.id} 的规范链接错误: ${m.url}`);
+  if (m.goUrl !== `go.html?node=${encNode}&body=${encId}`) fail(`动态成员 ${m.id} 的万能链接错误: ${m.goUrl}`);
+  if (m.shortGoUrl !== `go.html?body=${encId}`) fail(`动态成员 ${m.id} 的裸 ID 链接错误: ${m.shortGoUrl}`);
+  if (!m.name || !m.kindName || !m.source) fail(`动态成员 ${m.id} 缺少展示字段`);
+}
+for (const k of ['lg', '2mrs', 'grb']) {
+  if (!memberKinds.has(k)) fail(`动态成员缺少 ${k} 类`);
+}
+
 const goSrc = readFileSync(resolve(SRC, 'entries/go.js'), 'utf8');
 for (const needle of ["p.get('node')", "p.get('page')", 'href(node)', 'allPages()']) {
   if (!goSrc.includes(needle)) fail(`go.js 未支持 node/page 跳转，缺少: ${needle}`);
 }
 const tpl = readFileSync(resolve(here, 'links-template.html'), 'utf8');
-for (const needle of ['DATA.nodes', 'DATA.pages', '3D 页面直达', '宇宙层级节点直达']) {
-  if (!tpl.includes(needle)) fail(`links-template.html 缺少三层清单渲染: ${needle}`);
+for (const needle of ['DATA.nodes', 'DATA.pages', 'DATA.members', '3D 页面直达', '宇宙层级节点直达']) {
+  if (!tpl.includes(needle)) fail(`links-template.html 缺少四层清单渲染: ${needle}`);
 }
 if (existsSync(resolve(ROOT, 'static/links.html'))) {
   const built = readFileSync(resolve(ROOT, 'static/links.html'), 'utf8');
@@ -189,8 +214,9 @@ if (existsSync(resolve(ROOT, 'static/links.html'))) {
     globalThis.location = { href: 'https://example.test/links.html', search: '' };
     try {
       await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
-      const want = DATA.pages.length + DATA.nodes.length + DATA.bodies.length;
-      const wantSections = 2 + DATA.pages.filter((p) => DATA.bodies.some((b) => b.page === p.file)).length;
+      const want = DATA.pages.length + DATA.nodes.length + DATA.bodies.length + MEMBERS.length;
+      const wantSections = 2 + DATA.pages.filter((p) => DATA.bodies.some((b) => b.page === p.file)).length
+        + memberKinds.size;
       if (rows !== want) fail(`links.html 渲染出 ${rows} 行，应为 ${want}（页面+节点+天体）`);
       if (sections !== wantSections) fail(`links.html 渲染出 ${sections} 个分组，应为 ${wantSections}`);
     } catch (e) {
@@ -211,9 +237,16 @@ if (!existsSync(resolve(ROOT, 'static/links.html'))) {
   fail('缺少 static/links.html（跑 npm run gen:links 生成）');
 }
 if (existsSync(resolve(ROOT, 'src/data/deeplinks.json'))) {
-  const a = readFileSync(resolve(ROOT, 'src/data/deeplinks.json'), 'utf8');
+  const a = JSON.parse(readFileSync(resolve(ROOT, 'src/data/deeplinks.json'), 'utf8'));
   const b = resolve(ROOT, 'static/links.json');
-  if (!existsSync(b) || readFileSync(b, 'utf8') !== a) fail('static/links.json 与注册表不同步（跑 npm run gen:links）');
+  if (!existsSync(b)) fail('缺少 static/links.json（跑 npm run gen:links）');
+  else {
+    const pub = JSON.parse(readFileSync(b, 'utf8'));
+    const { members: _members, ...core } = pub;
+    if (JSON.stringify(a) !== JSON.stringify(core)) {
+      fail('static/links.json 的 pages/nodes/bodies 与运行时注册表不同步（跑 npm run gen:links）');
+    }
+  }
 }
 const legacy = [];
 // readme 里会说明「旧名已废弃」，属于正常文档；只扫代码与配置
@@ -231,5 +264,5 @@ if (errors.length) {
   for (const e of errors) console.error('  [!] ' + e);
   process.exit(1);
 }
-console.log(`外链校验通过：${DATA.bodies.length} 个天体 / ${DATA.pages.length} 个 3D 页面 / ${DATA.nodes.length} 个层级节点，`
-  + 'key / 裸 ID 唯一，页面级与节点级链接与注册表一致。');
+console.log(`外链校验通过：${DATA.bodies.length} 个天体 / ${DATA.pages.length} 个 3D 页面 / ${DATA.nodes.length} 个层级节点 / `
+  + `${MEMBERS.length} 个星表成员，key / 裸 ID 唯一，四层链接与注册表一致。`);

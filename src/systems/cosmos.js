@@ -311,6 +311,22 @@ function deepCloudsFor(node, inner) {
   ];
 }
 
+/** 把一个 GRB 红移样本包装成锚点节点定义（深链兜底也要复用同一套字段） */
+function makeHcbgMember(g) {
+  return {
+    id: `grb-${g.id}`,
+    zh: `伽马射线暴 ${g.id}`,
+    en: `GRB ${g.id}`,
+    kind: 'group', detail: 'planned',
+    spanLy: 1e6, dLy: g.dMpc * 3.26156e6,
+    color: 0xff8fa8, accent: '#ff8fa8',
+    scaleZh: `红移 z = ${g.z.toFixed(3)}`,
+    scaleEn: `redshift z = ${g.z.toFixed(3)}`,
+    briefZh: `Horváth et al. (2015) 的 GRB 红移样本：赤道坐标 RA ${g.ra.toFixed(2)}° / Dec ${g.de.toFixed(2)}°，光谱红移 z=${g.z.toFixed(3)}，T90 ${g.t90.toFixed(1)} 秒，共动距离约 ${(g.dMpc / 1000).toFixed(2)} Gpc。这类高红移伽马射线暴是武仙－北冕座长城的示踪天体；该结构本身的存在性仍有争议。`,
+    briefEn: `GRB from the Horváth et al. (2015) redshift sample: RA ${g.ra.toFixed(2)}°, Dec ${g.de.toFixed(2)}°, z=${g.z.toFixed(3)}, T90 ${g.t90.toFixed(1)} s, comoving distance ${(g.dMpc / 1000).toFixed(2)} Gpc. High-z GRBs trace the putative Hercules–Corona Borealis Great Wall, whose existence remains debated.`,
+  };
+}
+
 /** HCBG 页的真实成员：发现这堵长城时所用的 GRB 红移样本 */
 function hcbgMembersFor(node, inner) {
   if (node.id !== 'hcbg') return [];
@@ -331,22 +347,71 @@ function hcbgMembersFor(node, inner) {
   const maxd = Math.max(...ranked.map((r) => r.d), 1);
   const s = inner / maxd;
   return ranked.map(({ g, off, d }) => ({
-    node: {
-      id: `grb-${g.id}`,
-      zh: `伽马射线暴 ${g.id}`,
-      en: `GRB ${g.id}`,
-      kind: 'group', detail: 'planned',
-      spanLy: 1e6, dLy: g.dMpc * 3.26156e6,
-      color: 0xff8fa8, accent: '#ff8fa8',
-      scaleZh: `红移 z = ${g.z.toFixed(3)}`,
-      scaleEn: `redshift z = ${g.z.toFixed(3)}`,
-      briefZh: `Horváth et al. (2015) 的 GRB 红移样本：赤道坐标 RA ${g.ra.toFixed(2)}° / Dec ${g.de.toFixed(2)}°，光谱红移 z=${g.z.toFixed(3)}，T90 ${g.t90.toFixed(1)} 秒，共动距离约 ${(g.dMpc / 1000).toFixed(2)} Gpc。这类高红移伽马射线暴是武仙－北冕座长城的示踪天体；该结构本身的存在性仍有争议。`,
-      briefEn: `GRB from the Horváth et al. (2015) redshift sample: RA ${g.ra.toFixed(2)}°, Dec ${g.de.toFixed(2)}°, z=${g.z.toFixed(3)}, T90 ${g.t90.toFixed(1)} s, comoving distance ${(g.dMpc / 1000).toFixed(2)} Gpc. High-z GRBs trace the putative Hercules–Corona Borealis Great Wall, whose existence remains debated.`,
-    },
+    node: makeHcbgMember(g),
     group: '真实成员',
     pos: off.map((v) => v * s),
     focus: false,
   }));
+}
+
+// ── 深链兜底：任意真实成员都能被一条 URL 直达 ──────────────────────────
+// 页面默认只摆「离结构中心最近的 18 个」成员，但公开清单登记了全部
+// 2MRS 群 / GRB / 本星系群矮星系。若 ?body= 指向的成员恰好不在默认集合里，
+// 就按同一套真实三维坐标把它补进成员表——否则链接打开后什么都不聚焦，
+// 等于给出一个假链接。ID 直接采用 URL 里的字面值（lg- 前缀即命名空间），
+// main.js 的 focusId 用它查 infoById，无需再改运行时解析。
+const DEEP_MEMBER_INNER = 6.2;
+
+function deepLinkBodyId() {
+  if (typeof location === 'undefined') return null;
+  try {
+    const s = new URLSearchParams(location.search);
+    return s.get('body') || s.get('focus') || location.hash.slice(1) || null;
+  } catch { return null; }
+}
+
+function deepLinkedMember(nodeId, raw, existingIds) {
+  if (!raw) return null;
+  let id = String(raw).replace(/^#/, '');
+  try { id = decodeURIComponent(id); } catch { /* 非法转义按原样处理 */ }
+  if (!id || existingIds.has(id)) return null;
+  const c = cosmicVec(nodeId);
+
+  // 本星系群矮星系：lg-<星表 id>，统一前缀消除与上层节点的 ID 冲突
+  if (id.startsWith('lg-')) {
+    if (nodeId !== 'localgroup') return null;
+    const g = LG_GALAXIES.find((x) => x.id === id.slice(3));
+    if (!g) return null;
+    return { node: { ...makeLocalGroupMember(g), id }, group: '下级层级',
+             pos: g.pos.slice(0, 3), focus: false };
+  }
+
+  // 2MRS 星系群 / 星系团：Lambert et al. 2020 实测银道坐标 + 共动距离
+  if (id.startsWith('2mrs-')) {
+    if (!c || nodeId === 'localgroup' || nodeId === 'universe' || nodeId === 'hcbg') return null;
+    const g = TWO_MRS_GROUPS.find((x) => String(x.id) === id.slice(5));
+    if (!g) return null;
+    const off = [g.pos[0] - c[0], g.pos[1] - c[1], g.pos[2] - c[2]];
+    const d = Math.hypot(off[0], off[1], off[2]);
+    if (!Number.isFinite(d) || d < 1e-6) return null;
+    const s = DEEP_MEMBER_INNER / d;   // 方向真实、距离按本页视野归一化
+    return { node: { ...make2mrsMember(g, d), id }, group: '真实成员',
+             pos: off.map((v) => v * s), focus: false };
+  }
+
+  // HCBG 高红移 GRB：Horváth et al. 2015 红移样本
+  if (id.startsWith('grb-')) {
+    if (nodeId !== 'hcbg' || !c) return null;
+    const g = HCBG_MEMBERS.find((x) => String(x.id) === id.slice(4));
+    if (!g) return null;
+    const off = [g.pos[0] - c[0], g.pos[1] - c[1], g.pos[2] - c[2]];
+    const d = Math.hypot(off[0], off[1], off[2]);
+    if (!Number.isFinite(d) || d < 1e-6) return null;
+    const s = DEEP_MEMBER_INNER / d;
+    return { node: { ...makeHcbgMember(g), id }, group: '真实成员',
+             pos: off.map((v) => v * s), focus: false };
+  }
+  return null;
 }
 
 /**
@@ -427,6 +492,11 @@ export function makeCosmosSystem(nodeId) {
   }
   // 真实星表成员：主链 / 分支页 / 长城页都补，不再按「有没有子节点」一刀切。
   if (allRealMembers.length) members.push(...allRealMembers);
+  // 深链指定的成员若不在默认 18 个里，按真实坐标补进来，保证每条外链都能聚焦。
+  const deepMember = deepLinkedMember(
+    node.id, deepLinkBodyId(), new Set(members.map((m) => m.node.id)),
+  );
+  if (deepMember) members.push(deepMember);
   // 兜底：至少有一个天体，否则 applyScale / fitCamera 会取不到参考天体
   if (!members.length) {
     members.push({ node, group: '下级层级', pos: [0, 0, 0], focus: true });
