@@ -41,6 +41,21 @@ import {
 const TAU = 2 * Math.PI;
 const DEG = Math.PI / 180;
 
+/**
+ * 恒星显示半径：按真实 R☉ 做幂律映射，保留「谁比谁大」的次序，
+ * 但把 6 个数量级的跨度压到可同屏的范围（白矮星 0.008 R☉、
+ * 黑洞视界 ~3e-5 R☉ 若严格线性就是亚像素点）。
+ * 真实半径原样存 radiusRSun / info，显示半径只影响几何，不改物理。
+ */
+const RADIUS_REF_RSUN = 1.7;      // 参考：天狼星 A 量级
+const RADIUS_REF_UNITS = 9.0;     // 参考星显示半径（场景单位，沿用旧观感）
+const RADIUS_POWER = 0.42;       // <1 = 压大放小；越接近 1 越真实
+const RADIUS_MIN_UNITS = 1.1;    // 极小天体下限，避免缩成看不见的点
+export function starDisplayRadius(radiusRSun) {
+  const ratio = Math.max(1e-6, radiusRSun) / RADIUS_REF_RSUN;
+  return Math.max(RADIUS_MIN_UNITS, RADIUS_REF_UNITS * Math.pow(ratio, RADIUS_POWER));
+}
+
 /** 当前公历时刻 → 儒略年小数（J2000.0 = 2451545.0 JD） */
 export function julianYearFromDate(date = new Date()) {
   const jd = date.getTime() / 86400000 + 2440587.5;
@@ -232,8 +247,14 @@ export function expandSystem(s, opts = {}) {
         bodyKind: node.bodyKind ?? 'star',
         starBoost: 1.3,
         color: node.color,
-        fixedSize: node.bodyKind === 'blackhole' ? 5.2 : 9.0,
-        glowSize: node.bodyKind === 'blackhole' ? 14 : 24,
+        // 半径按真实 R☉ 幂律映射：黑洞视界/白矮星不再与主星同尺寸。
+        // 黑洞改用固定显示尺度（视界真实尺度不可见），并在 info 里写明。
+        fixedSize: node.bodyKind === 'blackhole'
+          ? 4.2
+          : starDisplayRadius(node.radius),
+        glowSize: node.bodyKind === 'blackhole'
+          ? 10
+          : Math.max(6, starDisplayRadius(node.radius) * 2.6),
         parent: parentCmId,
         inertialParent: true,
         hierarchyDepth: depth,
@@ -249,6 +270,11 @@ export function expandSystem(s, opts = {}) {
             ? (en ? 'event horizon (tens of km)' : '视界尺度（数十公里）')
             : `${num(node.radius, 4)} R☉`,
           绕质心半长轴: `${num(aI, 5)} AU`,
+          显示半径说明: node.bodyKind === 'blackhole'
+            ? (en ? 'Event horizon is invisible at this scale; shown at fixed marker size.'
+                  : '视界真实尺度在该比例下不可见，以固定标记尺寸显示。')
+            : (en ? `Diameter ∝ (radius / ${num(RADIUS_REF_RSUN, 2)} R☉)^${RADIUS_POWER}; relative order is true, extremes compressed. Real radius above.`
+                  : `显示半径 ∝ (半径 / ${num(RADIUS_REF_RSUN, 2)} R☉)^${RADIUS_POWER}；大小次序真实，极端值已压缩，真实半径见上。`),
           简介: en ? (node.noteEn ?? '') : (node.noteZh ?? ''),
         },
       });
@@ -279,11 +305,13 @@ export function expandSystem(s, opts = {}) {
       nameEn: cmNameEn,
       navGroup: en ? 'Barycentres' : '系统质心',
       barycenter: true,
+      // 质心是质量加权的几何点，不是天体：绝不能走恒星的「自发光核 + 加法光晕」
+      // 渲染路径，否则看起来像一颗蓝灰色恒星。noStarGlow 走暗锚点材质，
+      // 无 halo、不触发 bloom；固定尺寸只用于一个极小的定位标记 + 可点击热区。
       star: true,
-      starBoost: 0.62,
-      color: 0x8fa4c8,
-      fixedSize: 1.6,
-      glowSize: 5.5,
+      noStarGlow: true,
+      color: 0x5c6b82,
+      fixedSize: 0.9,
       parent: parentCmId,
       inertialParent: parentCmId != null,
       hierarchyDepth: depth,

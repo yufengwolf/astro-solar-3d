@@ -699,9 +699,12 @@ export function start(system) {
         // 一颗恒星亮点——否则 cosmos.html?node=milkyway 等上层页会冒出带「太阳系」
         // 标签的亮黄白点。这里只保留一个暗淡、去饱和的小锚点 + 可点击热区，
         // 不挂加法光晕、不触发 bloom、不加恒星球体。身份靠标签与信息卡表达。
-        const c = new THREE.Color(def.color ?? 0x9aa6b8).multiplyScalar(0.26);
+        const c = new THREE.Color(def.color ?? 0x9aa6b8)
+          .multiplyScalar(def.barycenter ? 0.18 : 0.26);
         node.mesh.material = new THREE.MeshBasicMaterial({ color: c });
         node.mesh.material.toneMapped = false;
+        // 质心连球壳描边都去掉：纯暗色小点靠标签/热区定位，彻底不像天体。
+        if (def.barycenter) node.mesh.material.wireframe = true;
       } else {
         // 真实恒星 / 星系：核自发光（提亮以触发 bloom）+ 加法混合光晕
         const boost = def.starBoost ?? 1.6;
@@ -1171,6 +1174,7 @@ export function start(system) {
     if (b.pointOnly && b.pointKind === 'pulsar') return 'pulsar';
     if (b.pointOnly && b.pointKind === 'member') return 'member';
     if (b.pointOnly && b.pointKind === 'blackhole') return 'blackhole';
+    if (b.barycenter) return 'barycenter';
     if (b.star) return 'star';
     if (b.parent) return 'moon';
     if (DWARF.has(b.id)) return 'dwarf';

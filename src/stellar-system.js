@@ -88,10 +88,10 @@ export function makeStellarSystem(nodeId, opts = {}) {
     portraitCaption: en
       ? (realScale
         ? 'True linear scale across all levels; inner pairs shrink to points. Physical elements unchanged.'
-        : 'True semi-major axes, eccentricities and periods within each level; inter-level spacing compressed for visibility. Star diameters enlarged.')
+        : 'True semi-major axes, eccentricities and periods within each level; inter-level spacing compressed for visibility. Star radii mapped by a power law preserving size order (details in each info card).')
       : (realScale
         ? '全层级严格线性比例，内层双星会缩成点；物理根数未改。'
-        : '每一层内部的半长轴、偏心率、周期均为真实值；跨层级间距为便于同屏已压缩（信息卡逐层标注）。星体直径已放大以便观察。'),
+        : '每一层内部的半长轴、偏心率、周期均为真实值；跨层级间距为便于同屏已压缩（信息卡逐层标注）。星体显示半径按真实半径的幂律映射，大小次序真实、极端值压缩（信息卡逐条标注）。'),
     bodies: tree.bodies,
   };
 }
